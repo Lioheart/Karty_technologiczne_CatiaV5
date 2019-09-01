@@ -1,0 +1,3443 @@
+'********************************************************************
+'****                      Skrypt wersja                         ****
+'****                                                            ****
+'**** Skrypt do Catii utworzony przez Jakuba Hawro, generuje xls ****
+'********************************************************************
+
+Dim Language As String
+Language = "VBScript"
+
+
+'=============== USER DEFINED VARIABLES ==================
+
+'=========================================================
+
+Dim kododkowki, sciezka, nazwa_pliku As String
+Dim kododkowki1, kododkowki2, img_oprawka As String
+Dim nazwaprogramu, punktyzerowe, komentarzyk, maszyna As String
+Dim rodzajobr, autor, nr_magazynu(20) As String
+dim oprawka(20), nazwanarzedzia(20), gage1(20), gage2(20), ConeDiameter1(20), Diameter2(20), ostrza(20), Plytki(20) As String
+dim NominalDiameter(20), CornerRadius(20), CuttingLength(20), LenghtL(20), OverallLength(20), BodyDiameter(20), komentarznarzedzia(100), komentarz(100)  As String
+dim liczba, cyfrafor as byte
+dim czas_numer_narzedzia, test, oprawka_narzedzie, najwieksze_narzedzie as integer
+dim czas(100), czas_narzedzia(100), czas_calkowity as integer
+dim narzedzie_nr(20), oprawka_nr(20), operacje as integer
+Dim numer_narzedzia(100) As Long
+Dim nazwa_odkuwki, kod_oprz, nazwa_oprz, material, stan as String
+Dim indeks, ilosc_programow as integer
+Dim wym1, wym2, wym3 As Double
+Dim Tabtest()
+
+liczba=1
+najwieksze_narzedzie = 0
+operacje = 1
+ilosc_programow = 1 'lizcnik arkuszy
+
+'Tworzenie karty globalnie, zmienne dostêpne dla wszystkich programów
+Set objExcel = CreateObject("Excel.Application")
+	objExcel.Visible = true
+	Set objWorkbook = objExcel.Workbooks.Add()
+'=========================================================
+'       Default tool list documentation directory
+'=========================================================
+dim DefaultHtmlAppliName As String
+
+
+'================= SYSTEM VARIABLES =======================
+dim EOL As String   ' Fin de ligne pour les fichiers textes
+dim CRLF As String
+
+dim PathSeparator as string
+dim FolderSeparator as string
+'==========================================================
+
+'=========================================================
+'        Default Part Operation folder name
+'=========================================================
+dim PartOperationFolderName As String
+
+
+'======================
+'  Test cession flag
+'======================
+Dim IsaTest As Boolean
+
+Dim StdComponentsDir As String
+Dim DefaultDocTarget, HtmlDefaultDocDir, HtmlFilesPath, CATIAComponentPath, HtmlFilesRoot As String
+
+Dim fso As FileSystem
+
+Dim IgnoredParameters()
+Dim NbIgnoredParameters As Integer
+
+Dim TabOutils()
+Dim MaxTabOutils As Integer
+
+
+Sub CATMain()
+
+'------------------------------------------------------------------
+' test Macro Atelier
+' creation Juillet2000 :    (kbb)
+' lecture d'un modele
+'------------------------------------------------------------------
+
+  DefineSeparators  'Definition des separateurs dans les paths
+
+
+  dim EnvVar,BidVar as String
+  Dim AdlOdtTmp, AdlOdtTmpPath, AdlOdtOut, AdlOdtOutPath, Slash As String
+
+
+  EnvVar = CATIA.SystemService.Environ("ADL_ODT_IN")
+  CATIA.SystemService.Print "ADL_ODT_IN =" & EnvVar
+
+  if (len(EnvVar)<10) then
+    BidVar = EnvVar
+  else
+    BidVar = Mid(EnvVar,1,10)
+  end if
+
+  IsaTest = False
+
+
+
+  HtmlFilesRoot = CreateHtmlFilesRoot
+
+  If (Not IsaTest) Then
+    DefaultDocTarget = HtmlFilesRoot 'Pourrait etre initialise autrement
+
+    DefaultHtmlAppliName = "MachiningDocument"
+
+    HtmlDefaultDocDir = DefaultDocTarget & DefaultHtmlAppliName
+
+    HtmlFilesPath = InputBox("Machining document directory", "Define directory", HtmlDefaultDocDir)
+  Else
+    HtmlFilesPath = AdlOdtOutPath
+  End If
+
+  If (HtmlFilesPath = "") Then
+   If (Not IsaTest) Then
+     MsgBox "Dokument nie stworzony", 4096  '(vbSystemModal)
+   Else
+     CATIA.SystemService.Print "No machining document created"
+   End If
+   Exit Sub
+  End If
+  
+  Dim RootActivityName As String
+  RootActivityName = "Process"
+  
+  '=========================================================
+  '        Default tool list documentation name
+  '=========================================================
+  Dim DefaultHTMLFileName As String
+  DefaultHTMLFileName = "MfgMachining-Document"
+
+  On Error Resume Next
+  CATDocument RootActivityName, DefaultHTMLFileName, HtmlFilesPath
+  
+
+  If (IsaTest) Then
+    Document1.Close
+    CATIA.Quit
+  End If
+
+End Sub
+
+
+'---------------------------------------------------------------
+'     Initialisation des variables dependantes du systeme
+'     ---------------------------------------------------
+'---------------------------------------------------------------
+Sub CreateSystemVariables()
+
+  'Definition des parametres qui seront ignores lors de
+  'l'affichage du tableau d'une resource
+  NbIgnoredParameters = 3
+  ReDim IgnoredParameters(NbIgnoredParameters)
+  IgnoredParameters(1) = "MFG_CONE_DIAMETER_2"
+  IgnoredParameters(2) = "MFG_CONE_LENGTH"
+  IgnoredParameters(3) = "MFG_MACHINE_COMP"
+  
+  EOL = Chr(10)
+  CRLF = Chr(13) & Chr(10)
+
+  PartOperationFolderName = "PartOperation" 'Do usuniêcia wraz ze wszystkim
+
+  StdComponentsDir = "Images"
+
+  MaxTabOutils = -1
+
+End Sub
+
+
+'---------------------------------------------------------------
+'     Initialisation de la variable HtmlFilesRoot
+'     -------------------------------------------
+'---------------------------------------------------------------
+Function CreateHtmlFilesRoot()
+
+  Dim result As String
+
+  result = GetPath("CATStartupPath", "Manufacturing")
+
+  If (result = "") Then result = GetPath("TEMP","")
+
+  If (result <> "") Then
+    If (Mid(result, Len(result), 1) <> "\" And Mid(result, Len(result), 1) <> "/") Then result = result & FolderSeparator
+  End If
+
+  CreateHtmlFilesRoot = PathCleaner(result)
+
+End Function
+' ------------------------------------------------------
+'     Correspondance Parameter -> valeur NLS
+' ------------------------------------------------------
+Function ToNLS(anObj, aParameterName)
+  Dim erreur As Integer
+  Dim NLSresult As String
+  On Error Resume Next
+  Err.Clear
+  NLSresult = anObj.GetAttributeNLSName(aParameterName)
+  erreur = Err.Number
+  If (erreur <> 0 Or NLSresult = "") Then NLSresult = aParameterName
+  ToNLS = NLSresult
+End Function
+
+
+' ------------------------------------------------------
+' Copie d'un fichier
+' Retourne : 0 -> pas d'erreur
+'            1 -> source absent
+'            2 -> destination existe et overwrite=False
+'            3 -> autre erreur
+' ------------------------------------------------------
+Function FileCopy(source, destination, overwrite)
+
+  Dim erreur As Integer
+  Dim ReturnedVal As Integer
+
+  returned = 0
+
+  If (Not (fso.FileExists(source))) Then
+    ReturnedVal = 1
+  Else
+    If (fso.FileExists(destination) And (Not overwrite)) Then
+      ReturnedVal = 2
+    Else
+      On Error Resume Next
+      Err.Clear
+      fso.CopyFile source, destination, overwrite
+      erreur = Err.Number
+      If (erreur <> 0) Then ReturnedVal = 3
+    End If
+  End If
+
+  FileCopy = ReturnedVal
+
+End Function
+
+
+'----------------------------------------------
+' Ajout d'une ligne dans un tableau 2 colonnes
+' NOM_DU_PARAMETRE - VALEUR_DU_PARAMETRE
+'----------------------------------------------  Parametry narzêdzi
+Sub AddParameterToTable(anObj, aParam, aStream, AcceptComment)
+  
+  Dim erreur As Integer
+
+  If (Not AcceptComment And aParam = "MFG_COMMENT") Then Exit Sub 'bardzo wa¿ne
+
+  Dim anAttribute As AnyObject
+
+  'liczba=liczba+1
+  On Error Resume Next
+  Err.Clear
+  Set anAttribute = anObj.getAttribute(aParam)
+  erreur = Err.Number
+  
+  'ToNLS(anObj, aParam) & ToNLS(anObj, AttrVal)
+
+  dim nr_nazwanarzedzia, nr_gage1, nr_oprawka, nr_gage2, nr_ConeDiameter1, nr_Diameter2, nr_ostrza, nr_NominalDiameter, nr_CornerRadius, nr_CuttingLength, nr_LenghtL, nr_OverallLength, nr_BodyDiameter, nr_oprawka_nr, nr_narzedzie_nr, nr_nr_magazynu as integer
+	'if (przyrzad = "MFG_NAME") Then
+		'oprawka(1) = przyrzad'anObj.getAttribute(aParam).ValueAsString
+	'End if
+	
+  'KONIEC
+  If (erreur <> 0) Then
+
+   Err.Clear
+   Set anAttribute = anObj.getAttribute(aParam & "_MODE")
+   erreur = Err.Number
+   If (erreur = 0) Then
+     AttrVal = anAttribute.ValueAsString
+     erreur = Err.Number
+     If (erreur = 0 And AttrVal <> "") Then
+     End If
+    End If
+
+   Err.Clear
+   Set anAttribute = anObj.getAttribute(aParam & "_VALUE")
+   erreur = Err.Number
+   If (erreur = 0) Then
+     AttrVal = anAttribute.ValueAsString
+     erreur = Err.Number
+     If (erreur = 0 And AttrVal <> "") Then
+     End If
+    End If
+
+   End If
+
+End Sub
+
+
+'--------------------------------------------------------------------
+' Main Procedure
+'--------------------------------------------------------------------
+Sub CATDocument(RootActivityName, HtmlFilesName, FilesPath)
+
+  dim erreur As Integer
+  dim EnvVar,BidVar as String
+  
+  if (PathSeparator="") then DefineSeparators  'Definition des separateurs dans les paths
+
+  EnvVar = CATIA.SystemService.Environ("ADL_ODT_IN")
+  CATIA.SystemService.Print "ADL_ODT_IN =" & EnvVar
+
+  if (len(EnvVar)<10) then
+    BidVar = EnvVar
+  else
+    BidVar = Mid(EnvVar,1,10)
+  end if
+
+  IsaTest = FALSE
+
+  Set fso = CATIA.FileSystem
+
+  CreateSystemVariables
+
+  HtmlFilesPath = FilesPath
+  sciezka = HtmlFilesPath
+  nazwa_pliku = HtmlFilesName
+  Dim DeleteDirPrompt As String
+
+  Dim L As Integer
+  L = Len(HtmlFilesPath)
+
+  If (Mid(HtmlFilesPath, L, 1) <> "\" And Mid(HtmlFilesPath, L, 1) <> "/") Then HtmlFilesPath = HtmlFilesPath & FolderSeparator
+
+  HtmlFilesPath = HtmlFilesPath '& HtmlFilesName
+
+  L = Len(HtmlFilesPath)
+  If (Mid(HtmlFilesPath, L, 1) = "\" Or Mid(HtmlFilesPath, L, 1) = "/") Then HtmlFilesPath = Mid(HtmlFilesPath, 1, L - 1)
+
+  On Error Resume Next
+
+  If (Not fso.FolderExists(HtmlFilesPath)) Then
+    Err.Clear
+    fso.CreateFolder (HtmlFilesPath)
+    erreur = Err.Number
+    If (erreur <> 0) Then
+      If (Not IsaTest) Then
+        MsgBox HtmlFilesPath & CRLF & CRLF & "B³¹d tworzenia folderu!", 4144  '(vbSystemModal+vbExclamation)
+      Else
+        CATIA.SystemService.Print HtmlFilesPath & " : Error creating folder"
+      End If
+      On Error GoTo 0
+      Err.Raise erreur
+    End If
+  End If
+  
+  HtmlFilesPath = HtmlFilesPath & FolderSeparator
+
+  CATIAComponentPath = CreateHtmlFilesRoot & StdComponentsDir & FolderSeparator
+
+  'Dim OutIndex As String
+  'OutIndex = HtmlFilesName & ".html" 'jak zapisaæ kartê KT brane z Catii
+
+  MachiningDocument_CreateHtmlFile OutIndex, RootActivityName
+
+End Sub
+
+
+
+Sub MachiningDocument_CreateHtmlFile(OutIndex, RootActivityName)   
+
+  '---------------------------------------------------------------
+  ' Retrieve the active document
+  '---------------------------------------------------------------
+  Dim MfgDoc1 As Document
+  Set MfgDoc1 = CATIA.ActiveDocument
+
+  Dim ProgramList As MfgActivities
+  Dim ActivityList As MfgActivities
+  Dim NumberOfProgram As Integer
+  Dim NumberOfActivity As Integer
+  Dim i As Integer
+  Dim J As Integer
+  Dim K As Integer
+  Dim SetupName As String
+  Dim ProgramName As String
+  Dim ActivityName As String
+  Dim CurrentSetup As ManufacturingActivity
+  Dim CurrentProgram As ManufacturingActivity
+  Dim CurrentActivity As ManufacturingActivity
+  Dim CurrentTool As ManufacturingTool
+  Dim ActivityType As String
+
+  Dim CurrentAssembly As ManufacturingToolAssembly
+  Dim AssemblyNumber as Long
+
+  Dim childs As Activities
+  Dim child As Activity
+  Dim quantity As Integer
+  Dim aProcess As AnyObject
+
+  Dim ToolNumber As Long
+  Dim ToolName As Variant
+
+  Dim CurrAct As Integer
+  
+  Dim erreur As Integer
+  
+  Set aProcess = MfgDoc1.GetItem(RootActivityName)
+
+  Dim myWindow As window
+  Dim myViewer As Viewer
+  Dim myOldLayout As CatSpecsAndGeomWindowLayout
+  Dim WindowW, WindowH As Integer
+
+  On Error Resume Next
+
+  Err.Clear
+
+'-----------------
+' Scan the Process
+'-----------------
+
+  quantity = 0
+  
+  If (aProcess.IsSubTypeOf("PhysicalActivity")) Then
+    Set childs = aProcess.ChildrenActivities
+    quantity = childs.Count
+
+    If quantity <= 0 Then
+      Exit Sub
+    End If
+    
+    Dim TabToolName()
+    Dim MaxToolNb As Integer
+    MaxToolNb = 0
+    'Redim TabToolName (MaxToolNb)
+
+    Dim PartOpeFolderName As String
+	
+	If quantity > 2 Then 'Tworzy arkusze
+		For i = 1 To (quantity - 6) step 1
+			objWorkbook.Sheets.Add
+		Next
+	End if
+
+    For i = 1 To quantity
+      Set child = childs.Item(i)
+      
+      If (child.IsSubTypeOf("ManufacturingSetup")) Then
+
+          For toolnb = 1 To MaxToolNb
+            TabToolName(toolnb) = ""
+          Next
+
+          CurrPONb = CurrPONb + 1
+          CurrAct = 0
+
+          Set CurrentSetup = child
+
+          CreatePartOperationSheet CurrentSetup, CurrPONb, MfgDoc1.Name
+
+          SetupName = CurrentSetup.Name
+		  kododkowki = SetupName
+		  kododkowki1 = Left(kododkowki,6)
+		  kododkowki2 = Right(kododkowki,4)
+
+          On Error Resume Next
+
+          erreur = Err.Number
+          If (erreur <> 0) Then Err.Clear
+  
+          '---------------------------------------------------------------
+          '       Read the Programs  of the current Setup
+          '---------------------------------------------------------------
+          Set ProgramList = CurrentSetup.Programs
+          NumberOfProgram = ProgramList.Count
+
+          For ProgNb = 1 To NumberOfProgram
+
+            ProgCuttingTime = 0
+            ProgTotalTime = 0
+			'For j = 0 to 100 step 1
+			'	czas(j) = NULL
+			'Next
+          
+            Set CurrentProgram = ProgramList.GetElement(ProgNb)
+            
+            ProgramName = CurrentProgram.Name
+			nazwaprogramu = ProgramName
+			rodzajobr = CurrentProgram.Comment
+			
+			czas_calkowity = 0
+			Erase czas
+            
+            '---------------------------------------------------------------
+            '               Read the Activities of the current Program
+            '---------------------------------------------------------------
+            
+            Set ActivityList = CurrentProgram.Activities
+            NumberOfActivity = ActivityList.Count
+
+            On Error Resume Next
+
+            For ActNb = 1 To NumberOfActivity
+              CurrAct = CurrAct + 1
+              Set CurrentActivity = ActivityList.GetElement(ActNb)
+              ActivityName = CurrentActivity.Name
+              ActivityType = CurrentActivity.Type
+
+              If (ActivityType <> "ToolChange" AND ActivityType <> "ToolChangeLathe") Then
+                Dim currcor, ncorr, ncorrl, diam As Variant
+                Dim corrtype As String
+                Dim pAtt As Parameter
+                Err.Clear
+                Set pAtt = CurrentActivity.getAttribute("CompNumber")
+                erreur = Err.Number
+
+                If (erreur = 0) Then
+                  ncorr = pAtt.Value
+                  erreur = Err.Number
+
+                  If (erreur = 0) Then
+                    Set CurrentTool = CurrentActivity.Tool
+                    ToolNumber = CurrentTool.ToolNumber
+					
+
+                    Dim NbCorr As Integer
+                    NbCorr = CurrentTool.CorrectorCount
+
+                    if(NbCorr>0) then
+ 
+                      Dim aCorr As ManufacturingToolCorrector
+                      Dim CorrNumber, CorrLengthNumber As Integer
+                      Dim CorrDiameter As Variant
+
+                      currcor = 0
+                      Do
+                        currcor = currcor + 1
+                        Set aCorr = CurrentTool.GetCorrector(currcor)
+                        CorrNumber = aCorr.Number
+                        If (CorrNumber = ncorr) Then
+                          corrtype = aCorr.Point
+                          ncorrl = aCorr.LengthNumber
+                          diam = aCorr.Diameter
+                          ToolType = CurrentTool.ToolType
+                          ToolName = CurrentTool.Name
+                          MajTabOutils ToolNumber, ncorr, ncorrl, diam, corrtype, ToolType, ToolName
+                          Exit Do
+                        End If
+                        If (currcor = NbCorr) Then Exit Do
+                      Loop
+                    End If
+                  End If
+                End If
+              End If
+
+              CreateFicheOpe CurrentActivity, CurrPONb, CurrAct, MfgDoc1.Name, SetupName, ProgramName 'SKUPIÆ SIÊ TU!
+			  
+			 'czas = 1+CurrAct
+
+              Err.Clear
+              aTime = CurrentActivity.MachiningTime
+              if(Err.Number=0) then ProgCuttingTime = ProgCuttingTime+aTime
+              Err.Clear
+              aTime = CurrentActivity.TotalTime
+              if(Err.Number=0) then ProgTotalTime = ProgTotalTime+aTime
+			  'czas_calkowity=ProgTotalTime
+
+            Next
+			  
+            CreateToolList MfgDoc1.Name, CurrentSetup, CurrPONb
+			'(1) = ToHMS(ProgTotalTime)
+            
+			komunikat
+			plikKT 
+			
+          Next
+
+          CompleteToolCompSheets CurrPONb, TabOutils, MaxTabOutils
+          Erase TabOutils
+          MaxTabOutils = -1
+
+      End If
+
+	liczba=1
+	najwieksze_narzedzie = 0
+	operacje = 1
+    Next
+
+    CreateToolAssocOpe childs
+
+    CreateAssemblyAssocOpe childs    
+
+  End If
+
+  Dim OpenDocNow As Integer
+  Dim EndOfGenerationTxt As String
+
+  If (Not IsaTest) Then
+
+    dim theCATCommandPath as String
+    dim theHTMLBrowserCmd as String
+
+    theCATCommandPath = GetPath("CATCommandPath","")
+
+    if(FolderSeparator="\") then
+      theHTMLBrowserCmd = theCATCommandPath & "broURL.bat"
+    else
+      theHTMLBrowserCmd = theCATCommandPath & "broURL.sh"
+    end if
+
+    'EndOfGenerationTxt = "Karta technologiczna : KT.html" & CRLF & "Zapisana w: " & HtmlFilesPath & CRLF & "Otworzyæ dokument teraz?"
+    'EndOfGenerationTxt = EndOfGenerationTxt & CRLF & CRLF & "Jeœli przegl¹darka siê nie otwiera, zawo³aj Hawranka "
+    'OpenDocNow = MsgBox(EndOfGenerationTxt, 4100)  '(vbSystemModal+vbYesNo)
+	
+
+    If (OpenDocNow = 6) Then '6->vbYes
+      Dim CmdLine As String
+
+      If (FolderSeparator = "\") Then
+         
+        ' Windows OSes only :
+        ' Do a copy of broURL.bat to avoid the problem of
+        ' space characters in the path.
+
+        Dim strTEMP As String
+        strTEMP = GetPath("TEMP","")
+        'MsgBox "strTEMP:" & strTEMP
+
+        Dim intRep As Integer
+        Dim strTarget As String
+        strTarget = strTEMP & "broURL.bat"
+        intRep = FileCopy(theHTMLBrowserCmd , strTarget, True)
+        If (intRep = 0) Then
+
+          ' It seams to work.
+          ' Let's replace the path.
+
+          theHTMLBrowserCmd = strTarget
+        End If
+
+      End If
+
+      CmdLine = theHTMLBrowserCmd & " " & HtmlFilesPath & "KT.html"
+      'MsgBox "CmdLine:" & CmdLine
+      On Error Resume Next
+
+      CATIA.SystemService.ExecuteBackgroundProcessus (CmdLine)
+      erreur = Err.Number
+      If (erreur <> 0) Then
+        MsgBox "Error while opening HTML editor", 4096 '(vbSystemModal)
+      end if
+    End If
+  Else
+    CATIA.SystemService.Print "Karta tech : " & OutIndex & " " & "Stworzona w: " & HtmlFilesPath
+  End If
+	'If nazwa_odkuwki = "" Then 'Monitoruje, czy u¿ytkownik wprowadzi³ ju¿ wczeœniej dane
+	'	komunikat
+	'End If
+    'plikKT 'Wywo³anie_tworzenia_karty
+	komunikat_koncowy()
+
+'Clear_All_Files_And_SubFolders_In_Folder 'usuwanie_folderów
+End Sub
+
+'---------------------------------------------------------------
+'          Composant "Changement d'outil"
+'---------------------------------------------------------------
+Sub CreateToolChangeSum(anOpe, OpeStream, PONb, OpeNb)
+
+  Dim ImgName As String
+  Dim aTool As ManufacturingTool
+  Dim ToolNumber As Variant
+  Dim OpeType, OpeName, ToolName, ToolType As String
+  Dim ToolDiameter As Variant
+  Dim Attribut As Parameter
+  Dim erreur, AssemblyError As Integer
+  Dim AssemblyNumber As Long
+  Dim AssemblyType, AssemblyName As String
+  Dim CurrentAssembly As ManufacturingToolAssembly
+
+
+  OpeName = anOpe.Name
+  OpeType = anOpe.Type
+  
+  Set aTool = anOpe.Tool
+  ToolNumber = aTool.ToolNumber
+  ToolName = aTool.Name
+  ToolType = aTool.ToolType 'typ narzêdzia
+  
+  'czas_numer_narzedzia=ToolNumber
+  
+  On Error Resume Next
+  set CurrentAssembly = NOTHING
+  AssemblyNumber = 0
+  Set CurrentAssembly = anOpe.ToolAssembly
+  Err.Clear
+  AssemblyNumber = CurrentAssembly.ToolNumber
+
+  AssemblyError = Err.Number
+  Err.Clear
+  
+  If (AssemblyError = 0) Then
+    AssemblyType = CurrentAssembly.AssemblyType
+    Set Attribut = CurrentAssembly.getAttribute("MFG_NAME")
+    erreur = Err.Number
+    If (erreur = 0) Then AssemblyName = Attribut.Value
+    Err.Clear
+ 
+    If (AssemblyType = "MfgLatheToolAssembly") Then
+      Dim anInsert As ManufacturingInsert
+      Dim InsertName, InsertType As String
+      Err.Clear
+      Set anInsert = anAssembly.Insert
+      erreur = Err.Number
+      If (erreur = 0) Then
+        Set Attribut = anInsert.getAttribute("MFG_NAME")
+        erreur = Err.Number
+        If (erreur = 0) Then
+          InsertName = Attribut.Value
+          If (InsertName <> "") Then
+            InsertType = anInsert.InsertType
+          End If
+        End If
+      End If
+    End If
+  End If
+ 
+End Sub
+
+
+'---------------------------------------------------------------
+'          Composant "PPInstruction"
+'---------------------------------------------------------------
+Sub CreatePPInstructionSum(anOpe, OpeStream, PONb, OpeNb)
+
+  Dim OpeType, OpeName As String
+
+  OpeName = anOpe.Name
+  OpeType = anOpe.Type
+
+  Dim OpeImageName As String
+  OpeImageName = GetOperationImage(anOpe, PONb, TRUE)
+
+End Sub
+
+
+'---------------------------------------------------------------
+'          Composant "Coordinate System"
+'---------------------------------------------------------------
+Sub CreateCoordinateSystemSum(anOpe, OpeStream, PONb, OpeNb)
+
+  Dim OpeType, OpeName As String
+
+  OpeName = anOpe.Name
+  OpeType = anOpe.Type
+
+  Dim OpeImageName As String
+  OpeImageName = GetOperationImage(anOpe, PONb, TRUE)
+
+End Sub
+
+
+'---------------------------------------------------------------
+'          Composant "Rotation plateau"
+'---------------------------------------------------------------
+Sub CreateRotationSum(anOpe, OpeStream, PONb, OpeNb)
+
+  Dim OpeType, OpeName As String
+  Dim pRotAng As Parameter
+  Dim RotAng As Variant
+
+  OpeName = anOpe.Name
+  OpeType = anOpe.Type
+
+  Dim OpeImageName As String
+  OpeImageName = GetOperationImage(anOpe, PONb, TRUE)
+
+  Set pRotAng = anOpe.getAttribute("MFG_ROTARY_ANGLE")
+  RotAng = pRotAng.ValueAsString
+
+End Sub
+
+
+'---------------------------------------------------------------
+'          Composant "Cycle"
+'---------------------------------------------------------------
+Sub CreateCycleSum(anOpe, OpeStream, PONb, OpeNb)
+
+  Dim erreur As Integer
+  Dim OpeType, OpeName As String
+
+  Dim OpeImageName As String
+  OpeImageName = GetOperationImage(anOpe, PONb, TRUE)
+
+  OpeName = anOpe.Name
+  OpeType = anOpe.Type
+
+  Dim CurrentAssembly As ManufacturingToolAssembly
+  Dim aTool As ManufacturingTool
+  Dim AssemblyNumber, ToolNumber As Long
+  Dim AssemblyName, AssemblyType As String
+  Dim ToolName, ToolType As String
+
+  Set aTool = anOpe.Tool
+  ToolName = aTool.Name
+  ToolType = aTool.ToolType
+
+  On Error Resume Next
+
+  Err.Clear
+  Set CurrentAssembly = anOpe.ToolAssembly
+  AssemblyNumber = CurrentAssembly.ToolNumber
+  erreur = Err.Number
+  
+  If (erreur = 0) Then
+
+    AssemblyType = CurrentAssembly.AssemblyType
+    Set Attribut = CurrentAssembly.getAttribute("MFG_NAME")
+    erreur = Err.Number
+    If (erreur = 0) Then AssemblyName = Attribut.Value
+    Err.Clear
+ 
+    If (AssemblyType = "MfgLatheToolAssembly") Then
+      Dim anInsert As ManufacturingInsert
+      Dim InsertName, InsertType As String
+      Err.Clear
+      Set anInsert = CurrentAssembly.Insert
+
+      erreur = Err.Number
+      If (erreur = 0) Then
+        Set Attribut = anInsert.getAttribute("MFG_NAME")
+        erreur = Err.Number
+        If (erreur = 0) Then
+          InsertName = Attribut.Value
+          If (InsertName <> "") Then
+            InsertType = anInsert.InsertType
+          End If
+        End If
+      End If
+    End If
+  
+  Else
+    ToolNumber = aTool.ToolNumber
+  End If
+
+End Sub
+
+
+'**********************************************************
+'           Creation d'une fiche "cycle"
+'**********************************************************
+
+Sub CreateFicheOpe(anOpe, PONb, OpeNb, aProcessName, aPOName, aProgName) 'Niezbêdne do wywo³ania czasów
+
+  WriteOpeFileHeader anOpe, aProcessName, aPOName, PONb, aProgName, OpeStream
+
+  WriteOperationParameters anOpe, OpeStream
+
+End Sub
+
+
+Sub WriteOpeFileHeader(anOpe, aProcessName, aPOName, aPONumber, aProgName, OpeStream)
+
+  Dim erreur As Integer
+
+  OpeType = anOpe.Type
+  Dim OpeImageName As String
+
+  If (OpeType <> "ToolChange" AND OpeType <> "ToolChangeLathe") Then
+    OpeImageName = GetOperationImage(anOpe, aPONumber, FALSE)
+  Else
+
+    Dim CurrentAssembly As ManufacturingToolAssembly
+    Dim aTool As ManufacturingTool
+    Dim ImgName, AssemblyName As String
+    Dim AssemblyNumber As Long
+    Dim AssemblyError as Integer
+    Dim Attribut as Parameter
+
+    On Error Resume Next
+    set CurrentAssembly = NOTHING
+    AssemblyNumber = 0
+    Err.Clear
+    Set CurrentAssembly = anOpe.ToolAssembly
+    AssemblyNumber = CurrentAssembly.ToolNumber
+	
+    'czas_numer_narzedzia = AssemblyNumber
+	
+	'w razie jakby nie by³o oprawek
+	Dim ToolNumber As Variant
+	
+	Set aTool = anOpe.Tool
+	ToolNumber = aTool.ToolNumber
+	'If AssemblyNumber = 0 Then
+		czas_numer_narzedzia=ToolNumber
+	'End If
+
+    AssemblyError = Err.Number
+    Err.Clear
+
+    ImgName = GetToolImage(aTool, aPONumber, False)
+
+    Dim DiameterId As String
+    If (aTool.ToolType = "MfgAPTTool") Then
+      DiameterId = "MFG_APT_DIAMETER"
+    Else
+      DiameterId = "MFG_NOMINAL_DIAM"
+    End If
+    Err.Clear
+    Set DiameterAttribut = aTool.getAttribute(DiameterId)
+    erreur = Err.Number
+    If (erreur = 0) Then
+      ToolDiameter = DiameterAttribut.ValueAsString
+      erreur = Err.Number
+    End If
+
+  End If
+
+  Dim OpeComment As String
+  OpeComment = anOpe.Description
+
+End Sub
+
+
+'---------------------------------------------------------------
+' Ecriture des tableaux de parametres pour chaque type de cycle
+'---------------------------------------------------------------
+'CZASY!
+Sub WriteOperationParameters(anOpe, OpeStream)
+
+  OpeType = anOpe.Type
+  Select Case OpeType
+  Case "ToolChange"
+    WriteToolChangeParameters anOpe, OpeStream
+	test = test +1 'iloœæ_wywo³añ_narzêdzi
+  Case "ToolChangeLathe"
+    WriteToolChangeParameters anOpe, OpeStream
+  Case "TableHeadRotation"
+    WriteTableHeadRotationParameters anOpe, OpeStream
+  Case "CoordinateSystem"
+    WriteCoordinateSystemParameters anOpe, OpeStream
+  Case "PPInstruction"
+    WritePPInstructionParameters anOpe, OpeStream
+  Case Else
+    WriteCycleParameters anOpe, OpeStream
+  End Select
+  'test = test +1 iloœæ_operacji+iloœæ_wywo³añ narzêdzi
+End Sub
+
+Sub WriteCycleParameters(anOpe, OpeStream)
+  AddCycleMachiningTime anOpe, OpeStream
+  'test = test +1 iloœæ_operacji
+
+End Sub
+
+Sub WriteToolChangeParameters(anOpe, OpeStream)
+
+  Dim erreur As Integer
+  Dim pPPInstr As Parameter
+  Dim PPInstr As String
+
+  PPInstr = ""
+
+  On Error Resume Next
+
+  Err.Clear
+  Set pPPInstr = anOpe.getAttribute("MFG_PPWORDS")
+  erreur = Err.Number
+  
+  If (erreur = 0) Then
+    PPInstr = pPPInstr.Value
+  Else
+    Err.Clear
+  End If
+
+End Sub
+
+
+Sub WriteTableHeadRotationParameters(anOpe, OpeStream)
+  
+  Dim erreur As Integer
+  Dim pPPInstr As Parameter
+  Dim PPInstr As String
+  PPInstr = ""
+  On Error Resume Next
+  Err.Clear
+  Set pPPInstr = anOpe.getAttribute("MFG_PPWORDS")
+  erreur = Err.Number
+
+  If (erreur = 0) Then
+    PPInstr = pPPInstr.Value
+  End If
+
+  'AddParameterToTable anOpe, "MFG_ROTARY_ANGLE", OpeStream, False
+  'AddParameterToTable anOpe, "MFG_ROT_DIR", OpeStream, False
+  'AddParameterToTable anOpe, "MFG_ROT_TYP", OpeStream, False
+
+End Sub
+
+Sub WriteCoordinateSystemParameters(anOpe, OpeStream)
+
+  Dim erreur As Integer
+  Dim pPPInstr As Parameter
+  Dim PPInstr As String
+  PPInstr = ""
+
+  On Error Resume Next
+
+  Err.Clear
+  Set pPPInstr = anOpe.getAttribute("MFG_PPWORDS")
+  erreur = Err.Number
+
+  If (erreur = 0) Then
+    PPInstr = pPPInstr.Value
+  Else
+    Err.Clear
+  End If
+
+End Sub
+
+Sub WritePPInstructionParameters(anOpe, OpeStream)
+
+  Dim erreur As Integer
+  Dim pPPInstr As Parameter
+  Dim PPInstr As String
+  PPInstr = ""
+
+  On Error Resume Next
+
+  Err.Clear
+  Set pPPInstr = anOpe.getAttribute("MFG_PPWORDS")
+  erreur = Err.Number
+  If (erreur = 0) Then
+    PPInstr = pPPInstr.Value
+  Else
+    Err.Clear
+  End If
+
+End Sub
+
+'--------------------------------------------------------
+' Ajout du tableau contenant les temps d'usinage
+'--------------------------------------------------------
+Sub AddCycleMachiningTime(aCycle, aStream) 'czasy
+
+  On Error Resume Next
+
+  'aStream.Write "<tr><td><font size=-1><b>Cutting time</b></font></td><td><font size=-1>" & ToHMS(aCycle.MachiningTime) & "</font></td></tr>" & EOL
+  'aStream.Write "<tr><td><font size=-1><b>Czas masz</b></font></td><td><font size=-1>" & ToHMS(aCycle.TotalTime) & "</font></td></tr>" & EOL
+  
+  czas(czas_numer_narzedzia) = int(ToHMS(aCycle.TotalTime)) + czas(czas_numer_narzedzia) + (int(ToHMS(aCycle.TotalTime)) * 0.2)
+  czas_calkowity = czas_calkowity + int(ToHMS(aCycle.TotalTime)) + (int(ToHMS(aCycle.TotalTime)) * 0.2)
+
+end sub
+
+
+'----------------------------------------------------------------
+' Transformation de minutes decimales en heures minutes secondes
+'----------------------------------------------------------------
+function ToHMS (aTime)
+
+  dim result as integer
+  'result = " "
+
+  Err.Clear
+
+  on error resume next
+  wtime = CDbl(aTime)
+  if(Err.Number<>0) then
+    ToHMS = 0
+    exit function
+  end if
+
+  if (wTime>=0) then
+
+    'nbhours = int(wTime/60)
+    'if(nbhours>0) then
+      'result = nbhours & "h"
+      'wtime = wtime - nbhours*60
+    'end if
+
+    nbminutes = int(wtime)
+    if(nbminutes>0) then
+      'if(result<>"") then result = result & " "
+      result = result & nbminutes
+      wtime = wtime - nbminutes
+    end if
+
+    'if(wtime>0) then
+      'if(result<>"") then result = result & " "
+      'result = result & round(wtime*60) & "''"
+    'end if
+
+  end if  
+
+  'if(result="") then result = "Nie przeliczono œcie¿ki"
+
+  ToHMS = result
+
+end function
+
+Function GetOperationImage(anOpe, aPONb, ForceStdImage)
+
+  Dim ImgName As String
+  dim FileName as String
+  dim sourcepath as string
+  ImgName = ""
+  FileName = ""
+
+  if(NOT ForceStdImage) then
+
+    sourcepath = anOpe.Representation
+
+    If (sourcepath <> "") Then
+      If (fso.FileExists(sourcepath)) Then
+
+        Dim namelength, posdernierslash, i As Integer
+        posdernierslash = 0
+        namelength = Len(sourcepath)
+
+        For i = 1 To namelength
+          If (Mid(sourcepath, i, 1) = "\" Or Mid(sourcepath, i, 1) = "/") Then posdernierslash = i
+        Next
+
+        If (posdernierslash = 0) Then
+          FileName = sourcepath
+        Else
+          foldername = Mid(sourcepath, 1, posdernierslash)
+          FileName = Mid(sourcepath, posdernierslash + 1, namelength - posdernierslash)
+        End If
+
+      End If
+    End If
+
+  End If
+
+End Function
+
+'----------------------------------------------
+' Recherche du fichier image associe a un outil
+'----------------------------------------------
+
+Function GetToolImage(aTool, PONb, IsSmall)
+
+  Dim erreur As Integer
+  Dim ToolPictureName, foldername, FileName As String
+  FileName = ""
+  foldername = ""
+
+  On Error Resume Next
+
+  Err.Clear
+
+  If (Not IsSmall) Then
+    ToolPictureName = aTool.Picture
+    erreur = Err.Number
+    If (erreur <> 0) Then ToolPictureName = ""
+  End If
+
+  If (ToolPictureName <> "") Then
+    If (fso.FileExists(ToolPictureName)) Then
+
+      Dim namelength, posdernierslash, i As Integer
+      posdernierslash = 0
+      namelength = Len(ToolPictureName)
+
+      For i = 1 To namelength
+        If (Mid(ToolPictureName, i, 1) = "\" Or Mid(ToolPictureName, i, 1) = "/") Then posdernierslash = i
+      Next
+
+      If (posdernierslash = 0) Then
+        FileName = ToolPictureName
+      Else
+        foldername = Mid(ToolPictureName, 1, posdernierslash)
+        FileName = Mid(ToolPictureName, posdernierslash + 1, namelength - posdernierslash)
+      End If
+
+    End If
+  End If
+
+End Function
+
+'******************************************************************
+'Creation de la liste des outils utilises dans une "Part Operation"
+'******************************************************************
+
+Sub CreateToolList(aDocName, aPartOpe, aPartOpeNumber)
+
+  Dim erreur As Integer
+
+  Dim i, J, K As Integer
+
+  Dim Attribut as Parameter
+
+  Dim TabTool()
+  Dim TabToolName()
+  Dim TabToolStatus() 'outil utilise ou non dans un assembly
+  Dim MaxToolNb As Integer
+  MaxToolNb = 16
+  ReDim TabTool(MaxToolNb)
+  ReDim TabToolName(MaxToolNb)
+  ReDim TabToolStatus(MaxToolNb)
+
+  Dim TabAssembly()
+  Dim TabAssemblyName()
+  Dim MaxAssemblyNb As Integer
+  MaxAssemblyNb = 16
+  ReDim TabAssembly(MaxToolNb)
+  ReDim TabAssemblyName(MaxToolNb)
+  
+  Dim CurrentAssembly As ManufacturingToolAssembly
+
+  OpeName = aPartOpe.Name
+
+  '------------------
+  ' Read the Programs
+  '------------------
+  Dim CurrentProgram As ManufacturingActivity
+  Dim ProgramList As MfgActivities
+  Dim NumberOfProgram As Integer
+  Dim OpeList As MfgActivities
+  Dim NumberOfOpe As Integer
+  Dim CurrentOpe As ManufacturingActivity
+  Dim OpeType As String
+  Dim CurrentTool As ManufacturingTool
+  
+  Set ProgramList = aPartOpe.Programs
+  NumberOfProgram = ProgramList.Count
+
+  For nopg = 1 To NumberOfProgram
+  
+    Set CurrentProgram = ProgramList.GetElement(nopg)
+    
+    '--------------------
+    ' Read the operations
+    '--------------------
+    Set OpeList = CurrentProgram.Activities
+    NumberOfOpe = OpeList.Count
+
+    For nope = 1 To NumberOfOpe
+    
+      Set CurrentOpe = OpeList.GetElement(nope)
+      OpeType = CurrentOpe.Type
+
+      If (OpeType = "ToolChange" Or OpeType = "ToolChangeLathe") Then
+        
+        'Traitement si presence d'un tool assembly
+        On Error Resume Next
+        set CurrentAssembly = NOTHING
+        AssemblyNumber = -1
+        Err.Clear
+        Set CurrentAssembly = CurrentOpe.ToolAssembly
+        AssemblyNumber = CurrentAssembly.ToolNumber
+        erreur = Err.Number
+        Err.Clear
+
+        If (erreur = 0) Then
+          Set Attribut = CurrentAssembly.getAttribute("MFG_NAME")
+          erreur = Err.Number
+          If (erreur = 0) Then AssemblyName = Attribut.Value
+          Err.Clear
+
+          If (AssemblyNumber > MaxAssemblyNb) Then
+            MaxAssemblyNb = AssemblyNumber
+            ReDim Preserve TabAssembly(MaxAssemblyNb)
+            ReDim Preserve TabAssemblyName(MaxAssemblyNb)
+            Set TabAssembly(AssemblyNumber) = CurrentAssembly
+            TabAssemblyName(AssemblyNumber) = AssemblyName
+          Else
+            If (TabAssemblyName(AssemblyNumber) <> AssemblyName) Then
+              Set TabAssembly(AssemblyNumber) = CurrentAssembly
+              TabAssemblyName(AssemblyNumber) = AssemblyName
+            End If
+          End If
+        End If
+        
+        Set CurrentTool = CurrentOpe.Tool
+        ToolNumber = CurrentTool.ToolNumber
+        ToolName = CurrentTool.Name
+        If (ToolNumber > MaxToolNb) Then
+          MaxToolNb = ToolNumber
+          ReDim Preserve TabTool(MaxToolNb)
+          ReDim Preserve TabToolName(MaxToolNb)
+          ReDim Preserve TabToolStatus(MaxToolNb)
+          Set TabTool(ToolNumber) = CurrentTool
+          TabToolName(ToolNumber) = ToolName
+        Else
+          If (TabToolName(ToolNumber) <> ToolName) Then
+            Set TabTool(ToolNumber) = CurrentTool
+            TabToolName(ToolNumber) = ToolName
+          End If
+        End If
+        if(ToolNumber>0 AND AssemblyNumber<1) then TabToolStatus(ToolNumber)=-1 'Kolejnoœæ wywo³ywania narzêdzi
+		'CurrentTool = aTool.Tool
+		numer_narzedzia(operacje) = ToolNumber
+		operacje = operacje +1 'iloœæ_operacji
+      End If
+
+    Next 'iteration/operations
+
+  Next 'iteration/programmes
+
+  'Ajout des tool-assembly dans le document
+
+  'oprawka(0)="test1"
+  'oprawka(1)="test2"
+  For i = 0 To MaxAssemblyNb 'lista frezów
+    If (TabAssemblyName(i) <> "") Then
+
+      Dim anAssembly As ManufacturingToolAssembly
+      Set anAssembly = TabAssembly(i)
+	  oprawka_narzedzie=1
+
+      Dim UsedTool As ManufacturingTool
+      Set UsedTool = anAssembly.Tool
+      UsedToolNb = UsedTool.ToolNumber
+      'TabToolStatus(UsedToolNb) = 1
+      if(TabToolStatus(UsedToolNb)<>-1) then TabToolStatus(UsedToolNb) = 1
+      
+      CreateAssemblySheet anAssembly, aPartOpeNumber, aPartOpe, aDocName
+
+      CreateToolCompSheet UsedTool, aPartOpeNumber, aPartOpe, aDocName
+    End If	
+  Next
+
+  'Ajout des outils dans le document
+  For i = 1 To MaxToolNb
+    If (TabToolName(i) <> "") Then
+	
+      Dim aTool As ManufacturingTool
+      Set aTool = TabTool(i)
+      Dim aToolNb As Integer
+      aToolNb = aTool.ToolNumber
+	  oprawka_narzedzie=0
+	  
+      If (TabToolStatus(aToolNb) <= 0) Then
+		CreateToolSheet aTool, aPartOpeNumber, aPartOpe, aDocName
+        CreateToolCompSheet aTool, aPartOpeNumber, aPartOpe, aDocName
+      End If
+    End If
+  Next
+  
+  'plikKT 'wywo³anie stworzenia karty
+  
+Erase kododkowki, sciezka, nazwa_pliku As String
+Erase kododkowki1, kododkowki2, img_oprawka As String
+Erase nazwaprogramu, punktyzerowe, komentarzyk, maszyna As String
+Erase rodzajobr, autor, nr_magazynu(20) As String
+Erase oprawka(20), nazwanarzedzia(20), gage1(20), gage2(20), ConeDiameter1(20), Diameter2(20), ostrza(20), Plytki(20) As String
+Erase NominalDiameter(20), CornerRadius(20), CuttingLength(20), LenghtL(20), OverallLength(20), BodyDiameter(20), komentarznarzedzia(100), komentarz(100)  As String
+Erase liczba, cyfrafor as byte
+Erase czas_numer_narzedzia, test, oprawka_narzedzie, najwieksze_narzedzie as integer
+Erase czas(100), czas_narzedzia(100), czas_calkowity as integer
+Erase narzedzie_nr(20), oprawka_nr(20), operacje as integer
+Erase numer_narzedzia(100) As Long
+Erase Tabtest()
+
+End Sub
+
+Sub usuwanie()
+	Erase liczba, cyfrafor as byte
+	Erase czas_numer_narzedzia, test, oprawka_narzedzie, najwieksze_narzedzie as integer
+	Erase czas(100), czas_narzedzia(100), czas_calkowity as integer
+	Erase numer_narzedzia(100) As Long
+	Erase Tabtest()
+End sub
+
+Sub CreateToolSheet(aTool, PONb, aPO, aProcessName)
+
+  Dim ToolNumber As Long
+  Dim ToolName, ToolType, ToolComment As String
+  Dim ToolDiameter As Real
+
+  ToolType = aTool.ToolType
+  ToolNumber = aTool.ToolNumber
+  ToolName = aTool.Name
+
+  If (ExistLogoDS) Then
+  Else
+  End If
+
+  WriteToolTable aTool, PONb, ToolStream, False'Narzêdzia bez oprawki wa¿ne
+
+End Sub
+
+'**********************************************************
+'           Creation d'une fiche "Part operation"
+'**********************************************************
+
+Sub CreatePartOperationSheet(aPartOpe, aPartOpeNumber, aProcessName)
+
+  Dim aPartName, aMachiningAxisSystem As String
+  Dim aMachine As ManufacturingMachine
+
+  Dim PartOpeImg As String
+  PartOpeImg = GetActivityImage(aPartOpe, aPartOpeNumber)
+
+  Dim HasMachine As Boolean
+  Dim MachineName As String
+  On Error Resume Next
+  Err.Clear
+  Set aMachine = aPartOpe.Machine
+  HasMachine = (Err.Number = 0)
+
+  Err.Clear
+
+  If (HasMachine) Then
+    MachineName = aMachine.Name
+	autor = aMachine.comment
+  Else
+    MachineName = "Nie wybrano maszyny"
+  End If
+  
+  maszyna = MachineName
+
+  Err.Clear
+  aPartName = aPartOpe.GetPartName
+
+  If (HasMachine) Then
+    CreateMachineSheet aPartOpe, aPartOpeNumber, aProcessName
+  End If
+
+  Err.Clear
+  aMachiningAxisSystem = aPartOpe.GetMachiningAxisSystemName
+  punktyzerowe = aMachiningAxisSystem
+
+  Dim ProgramList As MfgActivities
+  Dim CurrentProgram As ManufacturingActivity
+  Dim NumberOfProgram As Integer
+  Dim ProgramName As String
+
+  Set ProgramList = aPartOpe.Programs
+  NumberOfProgram = ProgramList.Count
+  For ProgNb = 1 To NumberOfProgram
+    Set CurrentProgram = ProgramList.GetElement(ProgNb)
+  Next
+
+  Dim Comment As String
+  Comment = aPartOpe.Comment
+  
+  If (Comment <> "") Then
+	komentarzyk = Comment
+  Else
+	komentarzyk = "Nowe uruchomienie"
+  End If
+  
+  If (komentarzyk = "No Description") Then
+	komentarzyk = ""
+  End If
+
+End Sub
+
+
+'**********************************************************
+'           Creation d'une fiche "Machine"  Tworzeniepliku
+'**********************************************************
+
+Sub CreateMachineSheet(aPartOpe, aPartOpeNumber, aProcessName)
+
+  Dim CurrentMachine As ManufacturingMachine
+  On Error Resume Next
+  Err.Clear
+  Set CurrentMachine = aPartOpe.Machine
+  If (Err.Number <> 0) Then Exit Sub
+
+  Dim Comment As String
+  Comment = CurrentMachine.Comment
+
+  Err.Clear
+
+  Dim nbNCAtt, nbSpindleAtt, nbTCAtt, nbRTAtt, att, maxatt As Integer
+
+  nbNCAtt = CurrentMachine.NumberOfNumericalControlAttributes
+  If (Err.Number <> 0) Then
+    nbNCAtt = 0
+    Err.Clear
+  End If
+
+  nbSpindleAtt = CurrentMachine.NumberOfSpindleAttributes
+  If (Err.Number <> 0) Then
+    nbSpindleAtt = 0
+    Err.Clear
+  End If
+
+  nbTCAtt = CurrentMachine.NumberOfToolChangeAttributes
+  If (Err.Number <> 0) Then
+    nbTCAtt = 0
+    Err.Clear
+  End If
+
+  nbRTAtt = CurrentMachine.NumberOfRotaryTableAttributes
+  If (Err <> 0) Then
+    nbRTAtt = 0
+    Err.Clear
+  End If
+
+  Dim TabAtt()
+
+  If (nbNCAtt > 0) Then
+    ReDim TabAtt(nbNCAtt)
+    CurrentMachine.GetListOfNumericalControlAttributes (TabAtt)
+    maxatt = nbNCAtt - 1
+  End If
+
+  If (nbSpindleAtt > 0) Then
+    ReDim TabAtt(nbSpindleAtt)
+    CurrentMachine.GetListOfSpindleAttributes (TabAtt)
+    maxatt = nbSpindleAtt - 1
+  End If
+
+  If (nbTCAtt > 0) Then
+
+    ReDim TabAtt(nbTCAtt)
+    CurrentMachine.GetListOfToolChangeAttributes (TabAtt)
+    maxatt = nbTCAtt - 1
+
+  End If
+
+  If (nbRTAtt > 0) Then
+
+    ReDim TabAtt(nbRTAtt)
+    CurrentMachine.GetListOfRotaryTableAttributes (TabAtt)
+    maxatt = nbRTAtt - 1
+  End If
+
+End Sub
+
+'**********************************************************
+' Creation de la liste des operations associees a un outil
+'**********************************************************
+
+Sub CreateToolAssocOpe(POList)
+
+  Dim isetup As Integer
+  Dim nbPO, currPO As Integer
+  Dim aPO As Activity
+
+  Dim TabToolFileName()
+  Dim MaxToolNb As Integer
+  MaxToolNb = 16
+  ReDim TabToolFileName(MaxToolNb)
+  
+  currPO = 0
+  
+  nbPO = POList.Count
+  If (nbPO <= 0) Then Exit Sub
+
+  For isetup = 1 To nbPO
+
+    Set aPO = POList.Item(isetup)
+
+    If (aPO.IsSubTypeOf("ManufacturingSetup")) Then
+
+      Dim CurrAct As Integer
+      currPO = currPO + 1
+      CurrAct = 0
+
+      Dim NumberOfProgram, ProgNb As Integer
+      Dim ProgramList As MfgActivities
+      Dim CurrentProgram As ManufacturingActivity
+    
+      Set ProgramList = aPO.Programs
+      NumberOfProgram = ProgramList.Count
+      
+      For ProgNb = 1 To NumberOfProgram
+
+        Dim OpeList As MfgActivities
+        Dim NumberOfOpe, OpeNb As Integer
+        Dim CurrentOpe As ManufacturingActivity
+        Dim OpeName, OpeType As String
+      
+        Set CurrentProgram = ProgramList.GetElement(ProgNb)
+        Set OpeList = CurrentProgram.Activities
+        NumberOfOpe = OpeList.Count
+        
+        For OpeNb = 1 To NumberOfOpe
+
+          CurrAct = CurrAct + 1
+
+          Set CurrentOpe = OpeList.GetElement(OpeNb)
+          OpeName = CurrentOpe.Name
+          OpeType = CurrentOpe.Type
+
+          If (OpeType <> "ToolChange" And OpeType <> "ToolChangeLathe" And OpeType <> "TableHeadRotation" And OpeType <> "CoordinateSystem" And OpeType <> "PPInstruction") Then
+
+            Set CurrentTool = CurrentOpe.Tool
+            ToolNumber = CurrentTool.ToolNumber 
+
+
+            On Error Resume Next
+            Err.Clear
+          End If
+        Next
+      Next
+    End If
+  Next
+
+End Sub
+
+
+
+'----------------------------------------------------------------------
+' Destruction d'un repertoire
+' RemoveDirectory = 0 : Ok
+'                   1 : erreur de lecture du repertoire foldername
+'                   2 : erreur suppression de fichier ou de repertoire
+'----------------------------------------------------------------------
+
+Function RemoveDirectory(foldername)
+
+  Dim result As Integer
+  Dim aFolder As Folder
+
+  result = 0
+
+  On Error Resume Next
+
+  Set aFolder = fso.GetFolder(foldername)
+
+  If (Err.Number <> 0) Then
+    Err.Clear
+    Set aFolder = Nothing
+    RemoveDirectory = 1
+    Exit Function
+  End If
+
+  Dim thefiles As Files
+  Dim nbfiles As Integer
+  Dim FilePath As String
+
+  Set thefiles = aFolder.Files
+  nbfiles = thefiles.Count
+
+  For index = nbfiles To 1 Step -1
+    FilePath = thefiles.Item(index).Path
+    fso.DeleteFile (FilePath)
+    If (Err.Number <> 0) Then
+	  Err.Clear
+      Set thefiles = Nothing
+      Set aFolder = Nothing
+      RemoveDirectory = 2
+      Exit Function
+    End If
+  Next
+
+  Set thefiles = Nothing
+
+  Dim theFolders As Folders
+  Dim nbfolders As Integer
+  Dim FolderPath As String
+
+  Set theFolders = aFolder.SubFolders
+  nbfolders = theFolders.Count
+  For index = nbfolders To 1 Step -1
+    Dim delfolder As Integer
+    FolderPath = theFolders.Item(index).Path
+    delfolder = RemoveDirectory(FolderPath)
+    If (delfolder <> 0) Then
+      Set theFolders = Nothing
+      Set aFolder = Nothing
+      RemoveDirectory = delfolder
+      Exit Function
+    End If
+  Next
+
+  Set theFolders = Nothing
+  Set aFolder = Nothing
+
+  Err.Clear
+  fso.DeleteFolder (foldername)
+  If (Err.Number <> 0) Then result = 2
+
+  RemoveDirectory = result
+
+End Function
+
+Sub MajTabOutils(nout, ncorr, ncorrl, diam, corrtype, ToolType, ToolName)
+
+  Dim i As Integer
+  Dim dejala As Boolean
+  dejala = False
+
+  For i = 0 To MaxTabOutils
+    If (TabOutils(0, i) = nout And TabOutils(1, i) = ncorr) Then
+      dejala = True
+      Exit For
+    End If
+  Next
+
+  If (Not dejala) Then
+    MaxTabOutils = MaxTabOutils + 1
+    ReDim Preserve TabOutils(6, MaxTabOutils)
+    TabOutils(0, MaxTabOutils) = nout
+    TabOutils(1, MaxTabOutils) = ncorr
+    TabOutils(2, MaxTabOutils) = ncorrl
+    TabOutils(3, MaxTabOutils) = diam
+    TabOutils(4, MaxTabOutils) = corrtype
+    TabOutils(5, MaxTabOutils) = ToolType
+    TabOutils(6, MaxTabOutils) = ToolName
+  End If
+
+End Sub
+
+
+Sub TriTabOutils(aTab, maxelem, coltri)
+
+  Dim trouve As Boolean
+  Dim index, indexmax As Integer
+  Dim bidval As Variant
+
+  indexmax = maxelem - 1
+
+  Do
+    trouve = False
+    For index = 0 To indexmax
+
+      If (TabOutils(coltri, index) > TabOutils(coltri, index + 1)) Then
+
+        bidval = TabOutils(0, index + 1)
+        TabOutils(0, index + 1) = TabOutils(0, index)
+        TabOutils(0, index) = bidval
+
+        bidval = TabOutils(1, index + 1)
+        TabOutils(1, index + 1) = TabOutils(1, index)
+        TabOutils(1, index) = bidval
+
+        bidval = TabOutils(2, index + 1)
+        TabOutils(2, index + 1) = TabOutils(2, index)
+        TabOutils(2, index) = bidval
+
+        bidval = TabOutils(3, index + 1)
+        TabOutils(3, index + 1) = TabOutils(3, index)
+        TabOutils(3, index) = bidval
+
+        bidval = TabOutils(4, index + 1)
+        TabOutils(4, index + 1) = TabOutils(4, index)
+        TabOutils(4, index) = bidval
+
+        bidval = TabOutils(5, index + 1)
+        TabOutils(5, index + 1) = TabOutils(5, index)
+        TabOutils(5, index) = bidval
+
+        bidval = TabOutils(6, index + 1)
+        TabOutils(6, index + 1) = TabOutils(6, index)
+        TabOutils(6, index) = bidval
+
+        trouve = True
+      End If
+    Next
+    If (Not trouve) Then Exit Do
+  Loop
+
+End Sub
+
+Sub CreateToolCompSheet(aTool, PONb, aPO, aProcessName)
+
+  Dim ToolNumber As Long
+  Dim ToolName, ToolType
+  Dim ToolDiameter As Variant
+  Dim pAttribut As Parameter
+
+  ToolType = aTool.ToolType
+  ToolNumber = aTool.ToolNumber
+  Set pAttribut = aTool.getAttribute("MFG_NAME")
+  ToolName = pAttribut.Value
+
+End Sub
+
+
+Sub CompleteToolCompSheets(aPONb, aTabCorr, aMaxCorr)
+
+  Dim i, CurrOut, nbcorr1out As Integer
+  Dim TabCorr1Out()
+  nbcorr1out = -1
+
+  TriTabOutils aTabCorr, aMaxCorr, 0
+
+  If (aMaxCorr >= 0) Then CurrOut = aTabCorr(0, 0)
+
+  For i = 0 To aMaxCorr
+
+    If (aTabCorr(0, i) = CurrOut) Then
+      nbcorr1out = nbcorr1out + 1
+      ReDim Preserve TabCorr1Out(6, nbcorr1out)
+      TabCorr1Out(0, nbcorr1out) = aTabCorr(0, i)
+      TabCorr1Out(1, nbcorr1out) = aTabCorr(1, i)
+      TabCorr1Out(2, nbcorr1out) = aTabCorr(2, i)
+      TabCorr1Out(3, nbcorr1out) = aTabCorr(3, i)
+      TabCorr1Out(4, nbcorr1out) = aTabCorr(4, i)
+      TabCorr1Out(5, nbcorr1out) = aTabCorr(5, i)
+      TabCorr1Out(6, nbcorr1out) = aTabCorr(6, i)
+    Else
+      TriTabOutils TabCorr1Out, nbcorr1out, 1
+      nbcorr1out = 0
+      ReDim TabCorr1Out(6, nbcorr1out)
+      TabCorr1Out(0, nbcorr1out) = aTabCorr(0, i)
+      TabCorr1Out(1, nbcorr1out) = aTabCorr(1, i)
+      TabCorr1Out(2, nbcorr1out) = aTabCorr(2, i)
+      TabCorr1Out(3, nbcorr1out) = aTabCorr(3, i)
+      TabCorr1Out(4, nbcorr1out) = aTabCorr(4, i)
+      TabCorr1Out(5, nbcorr1out) = aTabCorr(5, i)
+      TabCorr1Out(6, nbcorr1out) = aTabCorr(6, i)
+      CurrOut = aTabCorr(0, i)
+    End If
+  Next
+
+  If (nbcorr1out >= 0) Then
+    TriTabOutils TabCorr1Out, nbcorr1out, 1
+  End If
+  
+End Sub
+
+'----------------------------------------------------------------------
+' Lecture d'un chemin defini par une variable d'environnement.
+' Possibilite d'ajouter un sous repertoire de ce chemin.
+'----------------------------------------------------------------------
+Function GetPath(anEnvVar, aSubDir)
+
+  If (anEnvVar = "") Then
+    GetPath = ""
+    Exit Function
+  End If
+
+  Dim EnvValue As String
+  Dim ErrVal As Integer
+
+  On Error Resume Next
+
+  Err.Clear
+  EnvValue = CATIA.SystemService.Environ(anEnvVar)
+
+  ErrVal = Err.Number
+  If (ErrVal <> 0) Then
+    GetPath = ""
+    Exit Function
+  End If
+
+  Dim strlength As Integer
+  strlength = Len(EnvValue)
+  If (strlength < 1) Then
+    GetPath = ""
+    Exit Function
+  End If
+
+  Dim bidstr as String
+
+  Dim aFileSystem As FileSystem
+  Dim issemicolon As Boolean
+  Dim i, prevpos As Integer
+  Dim aPath As String
+
+  Set aFileSystem = CATIA.FileSystem
+
+  If (Mid(EnvValue, strlength, 1) <> PathSeparator) Then
+    EnvValue = EnvValue & PathSeparator
+    strlength = strlength + 1
+  End If
+
+  If (aSubDir <> "") Then
+    If (Mid(aSubDir, Len(aSubDir), 1) <> "/" And Mid(aSubDir, Len(aSubDir), 1) <> "\") Then aSubDir = aSubDir & FolderSeparator
+  End If
+
+  prevpos = 0
+
+  For i = 1 To strlength
+    issemicolon = (Mid(EnvValue, i, 1) = PathSeparator)
+    If (prevpos <> 0) Then
+      If (issemicolon) Then
+        aPath = Mid(EnvValue, prevpos, i - prevpos)
+        If (Mid(aPath, Len(aPath), 1) <> "/" And Mid(aPath, Len(aPath), 1) <> "\") Then aPath = aPath & FolderSeparator
+        aPath = aPath & aSubDir
+        If (aFileSystem.FolderExists(aPath)) Then
+          GetPath = aPath
+          Exit Function
+        End If
+        prevpos = 0
+      End If
+    Else
+      If (Not issemicolon) Then prevpos = i
+    End If
+  Next
+
+  aFileSystem = Nothing
+
+  GetPath = "" 'Pas trouve de chemin
+
+End Function
+
+
+'------------------------------------------------
+' Teste si un parametre est dans la liste de ceux
+' qui ne doivent pas etre traites
+'------------------------------------------------
+Function ParameterIsIgnored(aParam)
+  For i = 1 To NbIgnoredParameters
+    If (aParam = IgnoredParameters(i)) Then
+      ParameterIsIgnored = True
+      Exit Function
+    End If
+  Next
+  ParameterIsIgnored = False
+End Function
+
+
+'------------------------------------------------
+' Ajout du tableau des parametres d'une resource
+'------------------------------------------------
+Sub AddResourceParameters(aResource, aStream)
+
+  Dim TabAtt()
+  Dim att, i As Integer
+  Dim nbatt As Integer
+  nbatt = aResource.NumberOfAttributes
+
+  If (nbatt = 0) Then Exit Sub
+
+  ReDim TabAtt(nbatt)
+  ReDim Tabtest(nbatt)
+  
+
+  aResource.GetListOfAttributes TabAtt
+
+  For att = 0 To nbatt - 1
+	if cyfrafor = 1 Then		
+		aResource.GetListOfAttributes Tabtest'.ValueAsString
+	end if
+	if cyfrafor = 2 Then		
+		aResource.GetListOfAttributes Tabtest
+	end if
+    If (Not ParameterIsIgnored(TabAtt(att))) Then
+		If cyfrafor = 1 Then
+			If Tabtest(att) = "MFG_NAME" Then
+				oprawka(liczba) = aResource.getAttribute(TabAtt(att)).ValueAsString
+			End If
+			If Tabtest(att) = "MFG_TOOL_NUMBER" Then
+				oprawka_nr(liczba) = aResource.getAttribute(TabAtt(att)).Value
+			End If
+			If Tabtest(att) = "MFG_ASS_GAGE_1" Then
+				gage1(liczba) = aResource.getAttribute(TabAtt(att)).Value
+			End If
+			If Tabtest(att) = "MFG_ASS_GAGE_2" Then
+				gage2(liczba) = aResource.getAttribute(TabAtt(att)).Value
+			End If
+			If Tabtest(att) = "MFG_DIAMETER_2" Then
+				Diameter2(liczba) = aResource.getAttribute(TabAtt(att)).Value
+			End If
+			If Tabtest(att) = "MFG_CONE_DIAMETER_1" Then
+				ConeDiameter1(liczba) = aResource.getAttribute(TabAtt(att)).Value
+			End If
+		End If
+		If cyfrafor = 2 Then
+			If Tabtest(att) = "MFG_NAME" Then
+				nazwanarzedzia(liczba) = aResource.getAttribute(TabAtt(att)).ValueAsString
+			End If
+			If Tabtest(att) = "MFG_NB_OF_FLUTES" Then
+				ostrza(liczba) = aResource.getAttribute(TabAtt(att)).Value
+			End If
+			If Tabtest(att) = "MFG_NOMINAL_DIAM" Then
+				NominalDiameter(liczba) = aResource.getAttribute(TabAtt(att)).Value
+			End If
+			If Tabtest(att) = "MFG_CORNER_RAD" Then
+				CornerRadius(liczba) = aResource.getAttribute(TabAtt(att)).Value
+			End If
+			If Tabtest(att) = "MFG_CUT_LENGTH" Then
+				CuttingLength(liczba) = aResource.getAttribute(TabAtt(att)).Value
+			End If
+			If Tabtest(att) = "MFG_LENGTH" Then
+				LenghtL(liczba) = aResource.getAttribute(TabAtt(att)).Value
+			End If
+			If Tabtest(att) = "MFG_OVERALL_LGTH" Then
+				OverallLength(liczba) = aResource.getAttribute(TabAtt(att)).Value
+			End If
+			If Tabtest(att) = "MFG_BODY_DIAM" Then
+				BodyDiameter(liczba) = aResource.getAttribute(TabAtt(att)).Value
+			End If
+			If Tabtest(att) = "MFG_TOOL_NUMBER" Then
+				nr_magazynu(liczba) = aResource.getAttribute(TabAtt(att)).Value
+			End If
+		End If
+      'AddParameterToTable aResource, TabAtt(att), aStream, False 'Wszystkie parametry BARDZO WA¯NE
+    End If
+  Next
+  'liczba=0
+  if cyfrafor = 2 Then  
+	liczba = liczba + 1 'musi byæ poza For att
+	indeks = nbatt
+	'ReDim Tabtest(nbatt)
+  End If
+
+End Sub
+'---------------------------------------------------------------
+' Page relative a un tool assembly
+'---------------------------------------------------------------
+Sub CreateAssemblySheet(anAssembly, PONb, aPO, aProcessName)
+
+  Dim erreur As Integer
+  Dim AssemblyNumber As Variant
+  Dim AssemblyName, AssemblyType As String
+
+  on error resume next
+
+  AssemblyType = anAssembly.AssemblyType
+  AssemblyNumber = anAssembly.ToolNumber
+
+  On Error Resume Next
+
+  Err.Clear
+  Set Attribut = anAssembly.getAttribute("MFG_NAME")
+  erreur = Err.Number
+  If (erreur = 0) Then AssemblyName = Attribut.Value
+  Err.Clear
+
+  Dim aFileSyst As FileSystem
+  Set aFileSyst = CATIA.FileSystem
+
+  Dim AssToolName As String
+  Dim AssTool As ManufacturingTool
+  Err.Clear
+  Set AssTool = anAssembly.Tool
+  Set Attribut = AssTool.getAttribute("MFG_NAME")
+  erreur = Err.Number
+
+  If (erreur = 0) Then
+
+    AssToolName = Attribut.Value
+
+        If (AssemblyType = "MfgLatheToolAssembly") Then
+          Dim anInsert As ManufacturingInsert
+          Dim InsertName As String
+		  Err.Clear
+          Set anInsert = anAssembly.Insert
+          Set Attribut = anInsert.getAttribute("MFG_NAME")
+          erreur = Err.Number
+          If (erreur = 0) Then
+            InsertName = Attribut.Value
+          End If
+        End If
+  End If
+  
+  WriteAssemblyTable anAssembly, PONb, aStream, False 'nie usuwaæ
+
+  Dim UsedTool As ManufacturingTool
+  Set UsedTool = anAssembly.Tool
+
+  WriteToolTable UsedTool, PONb, aStream, True 'nie usuwaæ
+
+  If (AssemblyType = "MfgLatheToolAssembly") Then
+    Dim UsedInsert As ManufacturingInsert
+	Err.Clear
+    Set UsedInsert = anAssembly.Insert
+    erreur = Err.Number
+  End If
+  
+  On Error GoTo 0
+End Sub
+
+
+Sub WriteAssemblyTable(anAssembly, aPOnb, aStream, writecaption)
+
+  Dim AssemblyName, AssemblyType, AssemblyComment As String
+  Dim Attribut as Parameter
+
+  On Error Resume Next
+  Err.Clear
+  Set Attribut = anAssembly.getAttribute("MFG_NAME")
+  erreur = Err.Number
+  If (erreur = 0) Then AssemblyName = Attribut.Value
+  Err.Clear
+  'AssemblyName = anAssembly.Name
+  cyfrafor=1
+
+  AssemblyType = anAssembly.AssemblyType
+  AddResourceParameters anAssembly, aStream 'Nie usuwaæ...
+
+  ' Commentaire
+  '------------
+  AssemblyComment = anAssembly.Comment
+
+End Sub
+
+
+'-----------------------------------------------
+' Ecriture du tableau de description d'un outil
+' Parametres + Image + commentaire + correcteurs
+'-----------------------------------------------
+Sub WriteToolTable(aTool, aPONb, aStream, writecaption)
+
+  Dim ToolName, ToolType As String
+
+  ToolName = aTool.Name
+  ToolType = aTool.ToolType
+  cyfrafor=2
+  AddResourceParameters aTool, aStream 'nie usuwaæ
+  'cyfrafor=cyfrafor+1
+
+  Dim ImgName As String
+  ImgName = GetToolImage(aTool, aPONb, False)
+
+  ' Commentaire
+  '------------
+  ToolComment = aTool.Comment
+
+  Dim ToolNumber as Long
+  ToolNumber = aTool.ToolNumber
+  
+  'If (ToolNumber = 1) Then
+	komentarznarzedzia(ToolNumber) = ToolComment
+  'End If
+
+  If (ToolType <> "MfgAPTTool") Then
+
+    Dim NbCorr, corr As Integer
+    Dim aCorr As ManufacturingToolCorrector
+
+    NbCorr = aTool.CorrectorCount
+
+    Dim CorrPoint As String
+    Dim CorrNumber, CorrLengthNumber As Integer
+    Dim CorrDiameter As Variant
+
+    For corr = 1 To NbCorr
+
+      CorrPoint = ""
+      CorrNumber = 0
+      CorrLengthNumber = 0
+      CorrDiameter = 0
+
+      Set aCorr = aTool.GetCorrector(corr)
+
+      CorrPoint = aCorr.Point
+      CorrNumber = aCorr.Number
+      CorrLengthNumber = aCorr.LengthNumber
+      CorrDiameter = aCorr.Diameter
+
+    Next
+
+  End If
+
+End Sub
+
+'************************************************************
+' Creation de la liste des operations associees a un assembly
+'************************************************************
+
+Sub CreateAssemblyAssocOpe(POList)
+
+  Dim isetup As Integer
+  Dim nbPO, currPO As Integer
+  Dim aPO As Activity
+  dim erreur as integer
+
+  Dim TabAssemblyFileName()
+  Dim MaxAssemblyNb As Integer
+  MaxAssemblyNb = 16
+  ReDim TabAssemblyFileName(MaxAssemblyNb)
+
+  currPO = 0
+  
+  nbPO = POList.Count
+  If (nbPO <= 0) Then Exit Sub
+
+  For isetup = 1 To nbPO
+
+    Set aPO = POList.Item(isetup)
+
+    If (aPO.IsSubTypeOf("ManufacturingSetup")) Then
+
+      Dim CurrAct As Integer
+      currPO = currPO + 1
+      CurrAct = 0
+
+      Dim NumberOfProgram, ProgNb As Integer
+      Dim ProgramList As MfgActivities
+      Dim CurrentProgram As ManufacturingActivity
+    
+      Set ProgramList = aPO.Programs
+      NumberOfProgram = ProgramList.Count
+      
+      For ProgNb = 1 To NumberOfProgram
+
+        Dim OpeList As MfgActivities
+        Dim NumberOfOpe, OpeNb As Integer
+        Dim CurrentOpe As ManufacturingActivity
+        Dim OpeName, OpeType As String
+        Dim AssemblyNumber as Long
+      
+        Set CurrentProgram = ProgramList.GetElement(ProgNb)
+        Set OpeList = CurrentProgram.Activities
+        NumberOfOpe = OpeList.Count
+        
+        For OpeNb = 1 To NumberOfOpe
+
+          CurrAct = CurrAct + 1
+
+          Set CurrentOpe = OpeList.GetElement(OpeNb)
+          OpeName = CurrentOpe.Name
+          OpeType = CurrentOpe.Type
+
+          If (OpeType <> "ToolChange" And OpeType <> "ToolChangeLathe" And OpeType <> "TableHeadRotation" And OpeType <> "CoordinateSystem" And OpeType <> "PPInstruction") Then
+
+            On Error Resume Next
+
+
+            Err.Clear
+            Set CurrentAssembly = CurrentOpe.ToolAssembly
+            AssemblyNumber = CurrentAssembly.ToolNumber
+            erreur = Err.Number
+
+
+          End If
+        Next
+      Next
+    End If
+  Next
+
+  Err.Clear
+
+  for i = 0 to MaxAssemblyNb
+    if(TabAssemblyFileName(i)<>"") then
+      Err.Clear
+    end if
+  next
+
+End Sub
+
+sub DefineSeparators ()
+
+  PathSeparator =  ""
+  FolderSeparator =  ""
+
+  dim EnvName, EnvValue as String
+
+  EnvName = "CATInstallPath"
+  EnvValue = CATIA.SystemService.Environ(EnvName)
+
+  if(EnvValue<>"") then
+
+    if(InStr(EnvValue,"/")>0) then
+	  PathSeparator =  ":"
+	  FolderSeparator =  "/"
+	else
+	  PathSeparator =  ";"
+	  FolderSeparator =  "\"
+	end if
+
+  end if
+
+end sub
+
+
+function PathCleaner (aPath)
+
+  dim result as string
+  result = ""
+
+  if(FolderSeparator="/") then
+    result = replace (aPath,"\","/")
+  else
+    result = replace (aPath,"/","\")
+  end if
+
+  PathCleaner = result
+
+end function
+
+
+Function GetActivityImage(anActivity, aPONb)
+
+  Dim ImgName As String
+  dim sourcepath as string
+  ImgName = ""
+
+  sourcepath = anActivity.Representation
+
+  If (sourcepath <> "") Then
+    If (fso.FileExists(sourcepath)) Then
+
+      Dim namelength, posdernierslash, i As Integer
+      posdernierslash = 0
+      namelength = Len(sourcepath)
+
+      For i = 1 To namelength
+        If (Mid(sourcepath, i, 1) = "\" Or Mid(sourcepath, i, 1) = "/") Then posdernierslash = i
+      Next
+
+      If (posdernierslash = 0) Then
+        ImgName = sourcepath
+      Else
+        foldername = Mid(sourcepath, 1, posdernierslash)
+        ImgName = Mid(sourcepath, posdernierslash + 1, namelength - posdernierslash)
+      End If
+
+    End If
+  End If
+
+End Function
+
+sub plikKT()  
+	'Set objExcel = CreateObject("Excel.Application")
+	'objExcel.Visible = true
+	'Set objWorkbook = objExcel.Workbooks.Add()
+	Set objWorksheet = objWorkbook.Worksheets(ilosc_programow)
+	ilosc_programow = ilosc_programow + 1
+	objWorksheet.Name = nazwaprogramu 'Nazwa arkusza
+	
+	'Set objExcel = CreateObject("Excel.Application")
+	'objExcel.Visible = true
+	'Set objWorkbook = objExcel.Workbooks.Add()
+	'Set objWorksheet = objWorkbook.Worksheets(ilosc_programow)
+	'ilosc_programow = ilosc_programow + 1
+	'objWorksheet.Name = nazwaprogramu 'Nazwa arkusza
+	Dim wynik as Double
+
+	With objWorksheet.Range("A1:AJ52") 'czcionka, wszystkie komórki
+		.Font.Name = "FL Pismo Techniczne"
+		.HorizontalAlignment = -4108
+		.VerticalAlignment = -4108
+	End With
+	
+	With objWorksheet.Columns("A:AJ") 'szerokoœæ koluumn
+		.ColumnWidth = 3.14
+	End With
+	
+	'Obramowanie
+	objWorksheet.Range("A1:AJ52").Borders(5).LineStyle = -4142
+    objWorksheet.Range("A1:AJ52").Borders(6).LineStyle = -4142
+    With objWorksheet.Range("A1:AJ52").Borders(7)
+        .LineStyle = 1
+        .ColorIndex = 0
+        .Weight = 2
+    End With
+    With objWorksheet.Range("A1:AJ52").Borders(8)
+        .LineStyle = 1
+        .ColorIndex = 0
+        .Weight = 2
+    End With
+    With objWorksheet.Range("A1:AJ52").Borders(9)
+        .LineStyle = 1
+        .ColorIndex = 0
+        .Weight = 2
+    End With
+    With objWorksheet.Range("A1:AJ52").Borders(10)
+        .LineStyle = 1
+        .ColorIndex = 0
+        .Weight = 2
+    End With
+    With objWorksheet.Range("A1:AJ52").Borders(11)
+        .LineStyle = 1
+        .ColorIndex = 0
+        .Weight = 2
+    End With
+    With objWorksheet.Range("A1:AJ52").Borders(12)
+        .LineStyle = 1
+        .ColorIndex = 0
+        '.TintAndShade = 0 'tylko powy¿ej 2007
+        .Weight = 2
+    End With
+	
+    objWorksheet.Range("A1:AJ1").Borders(5).LineStyle = -4142 'górna krawêdŸ bez obramówki
+    objWorksheet.Range("A1:AJ1").Borders(6).LineStyle = -4142
+    objWorksheet.Range("A1:AJ1").Borders(7).LineStyle = -4142
+    objWorksheet.Range("A1:AJ1").Borders(8).LineStyle = -4142
+    With objWorksheet.Range("A1:AJ1").Borders(9)
+        .LineStyle = 1
+        .Weight = 2
+        .ColorIndex = 0
+    End With
+    objWorksheet.Range("A1:AJ1").Borders(10).LineStyle = -4142
+    objWorksheet.Range("A1:AJ1").Borders(11).LineStyle = -4142
+	
+	
+	'Szkice bez obramówki
+    objWorksheet.Range("A7:AJ24").Borders(5).LineStyle = -4142
+    objWorksheet.Range("A7:AJ24").Borders(6).LineStyle = -4142
+    objWorksheet.Range("A7:AJ24").Borders(7).LineStyle = -4142
+    With objWorksheet.Range("A7:AJ24").Borders(8)
+        .LineStyle = 1
+        .Weight = 2
+        .ColorIndex = 0
+    End With
+    With objWorksheet.Range("A7:AJ24").Borders(9)
+        .LineStyle = 1
+        .Weight = 2
+        .ColorIndex = 0
+    End With
+    objWorksheet.Range("A7:AJ24").Borders(10).LineStyle = -4142
+    objWorksheet.Range("A7:AJ24").Borders(11).LineStyle = -4142
+    objWorksheet.Range("A7:AJ24").Borders(12).LineStyle = -4142
+	
+	
+	objWorksheet.Range("A29:AJ29").Borders(5).LineStyle = -4142 'dolna krawêdŸ bez obramówki
+    objWorksheet.Range("A29:AJ29").Borders(6).LineStyle = -4142
+    objWorksheet.Range("A29:AJ29").Borders(7).LineStyle = -4142
+    objWorksheet.Range("A29:AJ29").Borders(8).LineStyle = -4142
+	With objWorksheet.Range("A29:AJ29").Borders(8)
+        .LineStyle = 1
+        .Weight = 2
+        .ColorIndex = 0
+    End With
+    With objWorksheet.Range("A29:AJ29").Borders(9)
+        .LineStyle = 1
+        .Weight = 2
+        .ColorIndex = 0
+    End With
+    objWorksheet.Range("A29:AJ29").Borders(10).LineStyle = -4142
+    objWorksheet.Range("A29:AJ29").Borders(11).LineStyle = -4142
+	
+	
+	objWorksheet.Cells(1,1) = "KARTA TECHNOLOGICZNA OBRÓBKI OPRZYRZ¥DOWANIA"
+	With objWorksheet.Range("A1:AJ1")
+		.Merge
+		.Font.Size = 18
+		.RowHeight = 30.75
+	End With
+	
+	'Wiersz 2
+	With objWorksheet.Range("A2:AJ2")
+		.Font.Size = 11
+		.HorizontalAlignment = -4108
+		.RowHeight = 20
+	End With
+	With objWorksheet.Range("A2:C2")
+		.Merge
+		.Value = "Nr ZK"
+	End With
+	With objWorksheet.Range("D2:Q2")
+		.Merge
+		.Value = "Nazwa odkuwki"
+	End With
+	With objWorksheet.Range("R2:W2")
+		.Merge
+		.Value = "Na obrabiarkê :"
+	End With
+	With objWorksheet.Range("X2:AE2")
+		.Merge
+		.Value = "Nazwa programu :"
+	End With
+	With objWorksheet.Range("AF2:AJ2")
+		.Merge
+		.Value = "Skr. Kod odk."
+	End With
+	
+	'Wiersz 3
+	With objWorksheet.Range("A3:AJ3")
+		.Font.Size = 16
+		.Font.Bold = True
+		.RowHeight = 20
+	End With
+	With objWorksheet.Range("A3:C3")
+		.Merge
+		.NumberFormat = "@"
+		.Value = kododkowki2
+	End With
+	With objWorksheet.Range("D3:Q3")
+		'.Font.ThemeColor = 3 'powy¿ej 2007
+		'.Font.ColorIndex = 15 'Dla 2003
+		.Merge
+		'.Value = nazwa_odkuwki
+		.Formula = "=PROPER(" & """" & nazwa_odkuwki & """" & ")"
+	End With
+	With objWorksheet.Range("R3:W3")
+		.Merge
+		.Value = maszyna
+	End With
+	With objWorksheet.Range("X3:AE3")
+		.Merge
+		.Value = nazwaprogramu
+	End With
+	With objWorksheet.Range("AF3:AJ3")
+		.Merge
+		.Value = Left(nazwaprogramu,3) & "/" & mid(nazwaprogramu, 4, 3)
+	End With
+	
+	'Wiersz 4
+	With objWorksheet.Range("A4:AJ4")
+		.Font.Size = 11
+		.RowHeight = 20
+	End With
+	With objWorksheet.Range("A4:G4")
+		.Merge
+		.Value = "Kod oprzyrz¹dowania"
+	End With
+	With objWorksheet.Range("H4:Q4")
+		.Merge
+		.Value = "Nazwa oprzyrz¹dowania"
+	End With
+	With objWorksheet.Range("R4:S4")
+		.Merge
+		.Value = "Pozycja"
+	End With
+	With objWorksheet.Range("T4:W4")
+		.Merge
+		.Value = "Materia³"
+	End With
+	With objWorksheet.Range("X4:AC4")
+		.Merge
+		.Value = "Wymiary"
+	End With
+	With objWorksheet.Range("AD4:AE4")
+		.Merge
+		.Value = "Masa [kg]"
+		.Font.Size = 10
+	End With
+	With objWorksheet.Range("AF4:AJ4")
+		.Merge
+		.Value = "Stan materia³u"
+	End With
+	
+	'Wiersz 5
+	With objWorksheet.Range("A5:AJ5")
+		.Font.Size = 16
+		.Font.Bold = True
+		.RowHeight = 20
+	End With
+	With objWorksheet.Range("A5:G5")
+		'.Font.ColorIndex = 15
+		.Merge
+		.Value = kod_oprz
+	End With
+	With objWorksheet.Range("H5:Q5")
+		'.Font.ColorIndex = 15
+		.Merge
+		'.Value = nazwa_oprz
+		.Formula = "=PROPER(" & """" & nazwa_oprz & """" & ")"
+	End With
+	dim znak_x as Integer
+	With objWorksheet.Range("R5:S5")
+		''.Font.ColorIndex = 15
+		.NumberFormat = "@"
+		.Merge
+		znak_x = InStrRev(nazwaprogramu, "_")
+		if znak_x=0 then
+			.Value = Right(nazwaprogramu,2)
+			znak_x = len(nazwaprogramu)
+		else
+			.Value = mid(nazwaprogramu, znak_x-2, 2)
+		end if
+	End With
+	With objWorksheet.Range("T5:W5")
+		'.Font.ColorIndex = 15
+		.Merge
+		.Value = material
+	End With
+	With objWorksheet.Range("X5:Y5")
+		.Merge
+		'.Font.ColorIndex = 15
+		if (len(wym2)<>0) then
+			.Value = wym1
+		else
+			.Value = "fi" & wym1
+		end if
+	End With
+	With objWorksheet.Range("Z5:AA5")
+		'.Font.ColorIndex = 15
+		.Merge
+		.Value = wym2
+	End With
+	With objWorksheet.Range("AB5:AC5")
+		.Merge
+		'.Font.ColorIndex = 15
+		.Value = wym3
+	End With
+	With objWorksheet.Range("AD5:AE5")
+		'.Font.ColorIndex = 15
+		.Merge
+		wynik = (3.14*((0.5*(wym1/1000))^2)*(wym3/1000))*7850
+		.Value = wynik
+		if (len(wym2)<>0) then
+			.Formula = "=((X5/1000)*(Z5/1000)*(AB5/1000))*7850"
+		end if
+	End With	
+	With objWorksheet.Range("AF5:AJ5")
+		'.Font.ColorIndex = 15
+		.Merge
+		'.Value = stan
+		.Formula = "=PROPER(" & """" & stan & """" & ")"
+	End With
+	With objWorksheet.Range("X5:AC5")
+		.Font.Size = 11
+	End With
+	
+	'Wiersz 6
+	With objWorksheet.Range("A6:D6")
+		.RowHeight = 20
+		.Merge
+		.Value = "Rodzaj obróbki:"
+		.Font.Size = 11
+	End With
+	With objWorksheet.Range("E6:AJ6")
+		.Merge
+		.Font.Size = 14
+		.Value = rodzajobr
+		.HorizontalAlignment = -4131
+	End With
+	
+	'Szkice
+	With objWorksheet.Range("A7:AJ24")
+		.RowHeight = 20
+		'.Font.ColorIndex = 15
+		.Font.Size = 11
+	End With
+	With objWorksheet.Range("A7:M15")
+		.Merge
+		.Value = "Wklej szkic miejca zerowego programu"
+	End With
+	With objWorksheet.Range("A16:M24")
+		.Merge
+		.Value = "WIDOK 3D"
+	End With
+	With objWorksheet.Range("N7:AJ24")
+		.Merge
+		.Value = "Wklej szkic przygotówki"
+	End With
+	
+	'Wiersz 25
+	With objWorksheet.Range("A25:AJ25")
+		.RowHeight = 20
+		.Font.Size = 11
+	End With
+	With objWorksheet.Range("B25:X25")
+		.Merge
+		.Value = punktyzerowe
+		.HorizontalAlignment = -4131
+	End With
+	With objWorksheet.Range("Y25:AD25")
+		.Merge
+		.Value = "Pracoch³onnoœæ"
+	End With
+	With objWorksheet.Range("AE25:AF25")
+		.Merge
+		.Value = "Tpz"
+	End With
+	With objWorksheet.Range("AG25:AH25")
+		.Merge
+		.Value = "Tp"
+	End With
+	With objWorksheet.Range("AI25:AJ25")
+		.Merge
+		.Value = "Tm"
+	End With
+	
+	dim czas_tp, czas_tpz as integer 'czasy TP i TPZ
+	czas_tp = 0.2
+	dim srodek as string
+	srodek = mid( nazwaprogramu, 7, 2)
+	if (srodek="KM") then
+		czas_tp= 0.6 + (( test * 2 )/60)
+	end if
+	czas_tpz=0.35
+	if (maszyna="Feller") or (maszyna="Feeler") or (maszyna="FELLER") or (maszyna="FEELER") then
+		czas_tpz=0.5
+	end if
+	
+	'Wiersz 26
+	With objWorksheet.Range("A26:AJ26")
+		.RowHeight = 20
+	End With
+	With objWorksheet.Range("Y26:AB26")
+		.Merge
+		.Value = "Tpz+(Tm+Tp)="
+		.Font.Size = 10
+		.HorizontalAlignment = -4131
+	End With
+	With objWorksheet.Range("AC26:AD26")
+		.Merge
+		.Font.Size = 12
+		.Font.Bold = True
+		.Formula = "=AE26+AG26+AI26"
+		.NumberFormat = "0.0"
+	End With
+	With objWorksheet.Range("AE26:AF26")
+		.Merge
+		.Font.Size = 11
+		.Value = czas_tpz
+		.NumberFormat = "0.0"
+	End With
+	With objWorksheet.Range("AG26:AH26")
+		.Merge
+		.Font.Size = 11
+		.Value = czas_tp
+		.NumberFormat = "0.0"
+	End With
+	
+	if (maszyna = "MAZAK") or (maszyna = "MAZAK HCN 5000") then
+		czas_calkowity = czas_calkowity * 0.8
+		czas_calkowity = czas_calkowity * 1.05
+	end if
+	
+	if (maszyna = "HCN 5000") then
+		czas_calkowity = czas_calkowity * 0.8
+		czas_calkowity = czas_calkowity * 1.05
+	end if
+	
+	With objWorksheet.Range("AI26:AJ26") 'czas ca³kowity + TPZ i inne
+		.Merge
+		.Font.Size = 11
+		.Value = czas_calkowity/60
+		.NumberFormat = "0.0"
+	End With
+
+	'Wiersz 27 i 28
+	With objWorksheet.Range("A27:AJ28")
+		.RowHeight = 13.5
+	End With
+	With objWorksheet.Range("Y27:AB27")
+		.Merge
+		.Value = "Nr karty zmian"
+		'.Value = czas_calkowity 'zgadza siê
+		.Font.Size = 8
+	End With
+	With objWorksheet.Range("AC27:AG27")
+		.Merge
+		.Value = autor
+		.Font.Size = 10
+		.Font.Bold = True
+	End With
+	With objWorksheet.Range("AH27:AJ27")
+		.Merge
+		.Value = date
+		.Font.Size = 10
+		.Font.Bold = True
+	End With
+	If komentarzyk = "Nowe uruchomienie" then
+		komentarzyk = "Nowe ur."
+	end if
+	With objWorksheet.Range("Y28:AB28")
+		.Merge
+		.Value = komentarzyk
+		.Font.Size = 11
+		.Font.Bold = True
+	End With
+	If komentarzyk = "Nowe ur." then
+		komentarzyk = "Nowe uruchomienie"
+	end if
+	With objWorksheet.Range("AC28:AG28")
+		.Merge
+		.Value = "Opracowa³:"
+		.Font.Size = 8
+	End With
+	With objWorksheet.Range("AH28:AJ28")
+		.Merge
+		.Value = "Data:"
+		.Font.Size = 8
+	End With
+	
+	With objWorksheet.Range("B26:X28")
+		.Merge
+		.Value = "UWAGI!!!"
+		.WrapText = True
+		.Font.Size = 11
+		.VerticalAlignment = -4160
+		.HorizontalAlignment = -4131
+	End With
+	With objWorksheet.Range("A25:A28")
+		.Merge
+		.Value = "UWAGI"
+		.Font.Size = 11
+		.Font.Bold = True
+		.Orientation = 90
+	End With
+	
+	'Wiersz 29, nowa strona
+	With objWorksheet.Range("A29:W29")
+		.Merge
+		.Font.Size = 18
+		.RowHeight = 30.75
+		.HorizontalAlignment =  -4152
+		.Value = "KARTA TECHNOLOGICZNA OBRÓBKI OPRZYRZ¥DOWANIA"
+	End With
+	
+	dim kod_kreskowy as string
+	With objWorksheet.Range("X29:AJ29")
+		.Merge
+		.Font.Size = 24
+		.Font.Name = "Bar-Code 39"
+		.RowHeight = 30.75
+		kod_kreskowy = "*ZK" & kododkowki2 & "*"
+		'& mid(nazwaprogramu, 7, znak_x-6) & "*"
+		'if mid(nazwaprogramu, 7, 2) = "KP" then
+		'	kod_kreskowy = "*ZK" & kododkowki2 & mid( nazwaprogramu, 7, 2) & "OC" & mid( nazwaprogramu, len(nazwaprogramu)-1) & "*"
+		'end if
+		.Value = kod_kreskowy
+	End With
+	
+	'Wiersz 30
+	With objWorksheet.Range("A30:AJ30")
+		.Font.Size = 11
+		.HorizontalAlignment = -4108
+		.RowHeight = 20
+	End With
+	With objWorksheet.Range("A30:C30")
+		.Merge
+		.Value = "Nr ZK"
+	End With
+	With objWorksheet.Range("D30:Q30")
+		.Merge
+		.Value = "Nazwa odkuwki"
+	End With
+	With objWorksheet.Range("R30:W30")
+		.Merge
+		.Value = "Na obrabiarkê :"
+	End With
+	With objWorksheet.Range("X30:AE30")
+		.Merge
+		.Value = "Nazwa programu :"
+	End With
+	With objWorksheet.Range("AF30:AJ30")
+		.Merge
+		.Value = "Skr. Kod odk."
+	End With
+	
+	'Wiersz 31
+	With objWorksheet.Range("A31:AJ31")
+		.Font.Size = 16
+		.Font.Bold = True
+		.RowHeight = 20
+	End With
+	With objWorksheet.Range("A31:C31")
+		.Merge
+		.NumberFormat = "@"
+		.Value = kododkowki2
+	End With
+	With objWorksheet.Range("D31:Q31")
+		'.Font.ColorIndex = 15
+		.Merge
+		.Formula = "=D3"
+	End With
+	With objWorksheet.Range("R31:W31")
+		.Merge
+		.Value = maszyna
+	End With
+	With objWorksheet.Range("X31:AE31")
+		.Merge
+		.Value = nazwaprogramu
+	End With
+	With objWorksheet.Range("AF31:AJ31")
+		.Merge
+		.Value = Left(nazwaprogramu,3) & "/" & mid(nazwaprogramu, 4, 3)
+	End With
+	
+	'Wiersz 32
+	With objWorksheet.Range("A32:AJ32")
+		.RowHeight = 16
+	End With
+	With objWorksheet.Range("C32:M32")
+		.Merge
+		.Value = "Oprawka/Trzpieñ"
+		'.Font.Bold = True
+		.Font.Size = 14
+	End With
+	With objWorksheet.Range("N32:AC32")
+		.Merge
+		.Value = "Narzêdzie"
+		'.Font.Bold = True
+		.Font.Size = 14
+	End With
+	With objWorksheet.Range("AF32:AJ32")
+		.Merge
+		.Value = "Nr karty zmian"
+		.Font.Size = 11
+	End With
+	
+	'Wiersz 33
+	With objWorksheet.Range("A33:AJ33")
+		.RowHeight = 36
+		.Font.Size = 10
+	End With
+	With objWorksheet.Range("A32:B33")
+		.Merge
+		.Orientation = 90
+		.Value = "Numer narzêdzia"
+		.WrapText = True
+	End With
+	With objWorksheet.Range("C33:I33")
+		.Merge
+		.Value = "Nazwa oprawki"
+	End With
+	With objWorksheet.Range("J33")
+		.Value = "G1 mim"
+		.WrapText = True
+	End With
+	With objWorksheet.Range("K33")
+		.Value = "D2 max"
+		.WrapText = True
+	End With
+	With objWorksheet.Range("L33")
+		.Value = "G2 min"
+		.WrapText = True
+	End With
+	With objWorksheet.Range("M33")
+		.Value = "d1 max"
+		.WrapText = True
+	End With
+	With objWorksheet.Range("N33:S33")
+		.Merge
+		.Value = "Nazwa / Symbol"
+	End With
+	With objWorksheet.Range("T33")
+		.Merge
+		.Orientation = 90
+		.Value = "Iloœæ ostrzy"
+		.WrapText = True
+		.Font.Size = 9
+	End With
+	With objWorksheet.Range("U33:W33")
+		.Merge
+		.Value = "Symbol p³ytek"
+		.WrapText = True
+	End With
+	With objWorksheet.Range("X33")
+		.Value = "D"
+	End With
+	With objWorksheet.Range("Y33")
+		.Value = "Rc"
+	End With
+	With objWorksheet.Range("Z33")
+		.Value = "lc"
+	End With
+	With objWorksheet.Range("AA33")
+		.Value = "l"
+	End With
+	With objWorksheet.Range("AB33")
+		.Value = "L"
+	End With
+	With objWorksheet.Range("AC33")
+		.Value = "Db"
+	End With
+	With objWorksheet.Range("AD32:AE33")
+		.Merge
+		.Value = "Czas pracy tm" '[min]
+		.WrapText = True
+	End With
+	With objWorksheet.Range("AF33:AJ33")
+		.Merge
+		.Value = komentarzyk
+		.Font.Size = 11
+		.Font.Bold = True
+	End With
+	
+	With objWorksheet.Range("A34:AJ50")
+		.WrapText = True
+		.Font.Size = 9
+		.RowHeight = 23.5	
+	End With
+	With objWorksheet.Range("A34:A50")
+		.Font.Size = 10
+		.Font.Bold = True
+	End With
+	
+	if (maszyna = "MAZAK") then
+		dim t_maz as integer
+		for t_maz = 1 to 100 step 1
+			czas(t_maz) = czas(t_maz) * 0.8
+			czas(t_maz) = czas(t_maz) * 1.05
+		Next
+	end if
+	if (maszyna = "HCN 5000") then
+		dim t_maz2 as integer
+		for t_maz2 = 1 to 100 step 1
+			czas(t_maz2) = czas(t_maz2) * 0.8
+			czas(t_maz2) = czas(t_maz2) * 1.05
+		Next
+	end if
+	
+	'for czyszczenie = 1 to test step 1
+	'	porzadek()
+	'	porzadek_kom()
+	'Next
+	
+	'Wartoœci
+	dim tekstowy1, tekstowy2, tekstowy, kolejnosc as string
+	dim pole, zm_a as integer
+	zm_a = nr_magazynu(1)
+	pole = 33		
+	for i = 1 to operacje step 1
+		kolejnosc = kolejnosc & numer_narzedzia(i)
+		if numer_narzedzia(i + 1) <> 0 then
+			kolejnosc = kolejnosc & ", "
+		end if
+	Next
+		'pole=pole+nr_magazynu(1)
+	for intRow = 1 to 17 step 1
+		if (intRow Mod 2 <> 0) then 'wierszowanie
+			tekstowy1 = "A" & intRow + pole
+			tekstowy2 = "AE" & intRow + pole
+			tekstowy=tekstowy1 & ":" & tekstowy2
+			if (nr_magazynu(intRow) <> 0) then
+				With objWorksheet.Range(tekstowy).Interior
+					.ColorIndex = 24
+					'.Pattern = xlSolid
+				End With
+			end if
+		end if
+		tekstowy1 = "A" & intRow + pole
+		tekstowy2 = "B" & intRow + pole
+		tekstowy=tekstowy1 & ":" & tekstowy2
+		objWorksheet.Range(tekstowy).Merge
+		objWorksheet.Cells(intRow + pole, 1).Value = nr_magazynu(intRow)
+		tekstowy1 = "C" & intRow + pole
+		tekstowy2 = "I" & intRow + pole
+		tekstowy=tekstowy1 & ":" & tekstowy2
+		objWorksheet.Range(tekstowy).Merge
+		objWorksheet.Cells(intRow + pole, 3).Value = oprawka(intRow)
+		objWorksheet.Cells(intRow + pole, 3).HorizontalAlignment = -4131
+		objWorksheet.Cells(intRow + pole, 10).Value = gage1(intRow)
+		objWorksheet.Cells(intRow + pole, 10).Font.Bold = True
+		objWorksheet.Cells(intRow + pole, 11).Value = Diameter2(intRow)
+		objWorksheet.Cells(intRow + pole, 11).Font.Bold = True
+		objWorksheet.Cells(intRow + pole, 12).Value = gage2(intRow)
+		if (ConeDiameter1(intRow)=0) then
+			objWorksheet.Cells(intRow + pole, 13).Value = Diameter2(intRow)
+		else
+			objWorksheet.Cells(intRow + pole, 13).Value = ConeDiameter1(intRow)
+		end if
+		tekstowy1 = "N" & intRow + pole
+		tekstowy2 = "S" & intRow + pole
+		tekstowy=tekstowy1 & ":" & tekstowy2
+		objWorksheet.Range(tekstowy).Merge
+		objWorksheet.Cells(intRow + pole, 14).Value = nazwanarzedzia(intRow)
+		objWorksheet.Cells(intRow + pole, 14).HorizontalAlignment = -4131
+		objWorksheet.Cells(intRow + pole, 20).Value = ostrza(intRow)
+		tekstowy1 = "U" & intRow + pole
+		tekstowy2 = "W" & intRow + pole
+		tekstowy=tekstowy1 & ":" & tekstowy2
+		objWorksheet.Range(tekstowy).Merge
+		objWorksheet.Cells(intRow + pole, 21).HorizontalAlignment = -4131
+		objWorksheet.Cells(intRow + pole, 21).Value = komentarznarzedzia(intRow + zm_a - 1)
+		objWorksheet.Cells(intRow + pole, 24).Value = NominalDiameter(intRow)
+		objWorksheet.Cells(intRow + pole, 24).Font.Bold = True
+		objWorksheet.Cells(intRow + pole, 25).Value = CornerRadius(intRow)
+		objWorksheet.Cells(intRow + pole, 25).Font.Bold = True
+		objWorksheet.Cells(intRow + pole, 25).NumberFormat = "0.0"
+		objWorksheet.Cells(intRow + pole, 26).Value = CuttingLength(intRow)
+		objWorksheet.Cells(intRow + pole, 27).Value = LenghtL(intRow)
+		objWorksheet.Cells(intRow + pole, 28).Value = OverallLength(intRow)
+		objWorksheet.Cells(intRow + pole, 29).Value = BodyDiameter(intRow)
+		tekstowy1 = "AD" & intRow + pole
+		tekstowy2 = "AE" & intRow + pole
+		tekstowy=tekstowy1 & ":" & tekstowy2
+		objWorksheet.Range(tekstowy).Merge
+		if (int(czas(intRow + zm_a - 1)/60) <> "0") then
+			objWorksheet.Cells(intRow + pole, 30).Value = int(czas(intRow + zm_a - 1)/60) & "h " & int(czas(intRow + zm_a - 1)-int(czas(intRow + zm_a - 1)/60)*60) + 1 & "min" 'czas w godzinach i minutach
+		elseif (czas(intRow + zm_a - 1) > 0 ) then
+			objWorksheet.Cells(intRow + pole, 30).Value = int(czas(intRow + zm_a - 1)) + 1 & "min" 'same minuty
+		end if
+		objWorksheet.Cells(intRow + pole, 37).Value = czas(intRow + zm_a - 1) ' stary format czasu
+		'+++inne nr magazynu+++
+		if (nr_magazynu(intRow + 1) - nr_magazynu(intRow)) > 1 then
+			zm_a = zm_a + (nr_magazynu(intRow + 1) - nr_magazynu(intRow)) - 1
+		end if
+		On Error Resume Next
+	Next
+	objWorksheet.Range("AK33").Formula = "=SUM(AK34:AK50)/60"
+	'objExcel.Cells(34, 38).Value = najwieksze_narzedzie ' ile narzêdzi
+	'for intRow = 1 to 100 step 1
+	'	objExcel.Cells(intRow, 38).Value = numer_narzedzia(intRow)
+	'Next
+	'objExcel.Cells(1,39).Value = operacje
+	'objExcel.Cells(1,40).Value = kolejnosc
+	
+	
+	'for i = 0 to indeks step 1 ' Wyœwietla parametry narzêdzi w Excelu
+	'	objExcel.Cells(i+1, 38).Value = Tabtest(i)
+	'Next
+	
+	
+	With objWorksheet.Range("AF34:AJ41")
+		.Merge
+		.Value = "Szkic oprawki"
+		.VerticalAlignment = -4160
+		.Font.Size = 10
+	End With
+	With objWorksheet.Range("AF42:AJ50")
+		.Merge
+		.Value = "Szkic narzêdzia"
+		.VerticalAlignment = -4160
+		.Font.Size = 10
+	End With
+	
+	With objWorksheet.Range("AF51:AJ51")
+		.RowHeight = 20
+	End With
+	With objWorksheet.Range("AF52:AJ52")
+		.RowHeight = 13.75
+	End With
+	With objWorksheet.Range("A51:AA52")
+		.Merge
+		.Value = "UWAGI: Maksymalna d³ugoœæ narzêdzia G1 + 5mm" & Chr(10) & "Kolejnoœæ wywo³ania narzêdzi: " & kolejnosc
+		.WrapText = True
+		.Font.Size = 10
+		.VerticalAlignment = -4160
+		.HorizontalAlignment = -4131
+	End With
+	With objWorksheet.Range("AB51:AG51")
+		.Merge
+		.Value = autor
+		.Font.Size = 10
+		.Font.Bold = True
+	End With
+	With objWorksheet.Range("AH51:AJ51")
+		.Merge
+		.Value = date
+		.Font.Size = 10
+		.Font.Bold = True
+	End With
+	
+	With objWorksheet.Range("AB52:AG52")
+		.Merge
+		.Value = "Opracowa³:"
+		.Font.Size = 8
+	End With
+	With objWorksheet.Range("AH52:AJ52")
+		.Merge
+		.Value = "Data:"
+		.Font.Size = 8
+	End With 
+	
+	With objWorksheet.Pagesetup 'opcje drukowania
+		.Orientation = 2 'orientacja strony
+		.Zoom = 100
+		'.FitToPagesWide = 1
+		'.FitToPagesTall = 1
+		.LeftMargin =  0.8
+		.RightMargin =  0.8
+		.TopMargin =  1.5
+		.BottomMargin = 0.7
+		.HeaderMargin = 0
+		.FooterMargin = 0	
+		.CenterHorizontally = True
+        .CenterVertically = True
+		.PrintArea = "$A$1:$AJ$52"
+	End With
+	
+	'objWorksheet.Rows(1).Select 'zaznaczanie
+	'objWorksheet.Range("A3:B5").Value=2 ' odwo³anie wzglêdne do komórek. Aby przypisaæ, wa¿ne jest aby by³o Value
+	'objWorksheet.Range("H15:I16").MergeCells = True 'scalanie
+	'objWorksheet.Range("H15:I16").Value="kw" 'przypisanie wartoœci
+	'objWorksheet.Cells(1,1).WrapText = True 'zawijanie
+	'objWorksheet.Columns(3).ColumnWidth = 28 ' szerokoœæ kolumny
+	'objWorksheet.Rows(1).RowHeight = 30 'wysokoœæ wiersza
+	'objWorksheet.Range("H15:I16").HorizontalAlignment = -4108'wyœrodkowanie! ZnaleŸæ inne
+	'objWorksheet.Rows(1).Merge 'scalanie
+	'objWorksheet.Cells(1,1).Font.Bold = True 'pogrubienie
+	'objWorksheet.Cells(1,1).Font.Name = "Times New Roman" 'zmiana czcionki
+
+	'Next
+	'objExcel.Cells.EntireColumn.AutoFit 'hmm autodopasowanie
+	
+	'objWorksheet.Range("AK1").Parent.Pictures.Insert("F:\ncmillingtoolassembly.gif") ' wstawianie obrazka
+	
+	Dim myPict As Picture 'wstawianie obrazka w odpowiednie miejsce
+	With objWorksheet.Range("AF34:AJ41")
+	Set myPict = objWorksheet.Range("AF34:AJ41").Parent.Pictures.Insert("C:\Skrypt\oprawka.jpg") 'oprawka
+		myPict.Top = .Top + 1
+		myPict.Width = .Width - 6'szerokoœæ w mm
+		myPict.Height = .Height - 2 'wysokoœæ w mm
+		myPict.Left = .Left + 4
+		myPict.Placement = 1
+	End With
+	
+	With objWorksheet.Range("AF42:AJ50")
+	Set myPict = objWorksheet.Range("AF34:AJ41").Parent.Pictures.Insert("C:\Skrypt\narzedzie.jpg") 'narzêdzie
+		myPict.Top = .Top + 1
+		myPict.Width = .Width - 6 'szerokoœæ w mm
+		myPict.Height = .Height - 2 'wysokoœæ w mm
+		myPict.Left = .Left + 1
+		myPict.Placement = 1
+		'myPict.PrintObject = False 'czy drukowaæ False True
+	End With
+	
+  'obrazek 3D	
+  Dim myWindow As window
+  Dim myViewer As Viewer
+  Dim myOldLayout As CatSpecsAndGeomWindowLayout
+  Dim WindowW, WindowH As Integer
+  
+  Set myWindow = CATIA.ActiveWindow
+
+    myOldLayout = myWindow.Layout
+    WindowW = myWindow.Width
+    WindowH = myWindow.Height
+
+    myWindow.Width = 800
+    myWindow.Height = 600
+    myWindow.Layout = 1
+
+    Set myViewer = myWindow.ActiveViewer
+  
+    Dim BGcolor(3)
+    myViewer.GetBackgroundColor BGcolor
+
+    myViewer.PutBackgroundColor Array(1, 1, 1)
+    myViewer.Reframe
+
+    Dim PicName As String
+    PicName = "DocFabView.jpg"
+    myViewer.CaptureToFile 5, HtmlFilesPath & PicName
+
+    myViewer.PutBackgroundColor BGcolor
+
+    myWindow.Width = WindowW
+    myWindow.Height = WindowH
+    myWindow.Layout = myOldLayout
+	
+	With objWorksheet.Range("A16:M24")
+	Set myPict = objWorksheet.Range("A16:M24").Parent.Pictures.Insert(HtmlFilesPath & PicName) 'Widok 3d
+		myPict.Top = .Top + 1
+		myPict.Width = .Width
+		myPict.Height = .Height - 2 'wysokoœæ w mm
+		myPict.Left = .Left + 1
+		myPict.Placement = 1
+		myPict.PrintObject = True 'czy drukowaæ False True
+		myPict.ShapeRange.PictureFormat.CropTop = 120
+		myPict.ShapeRange.PictureFormat.CropBottom = 100
+		myPict.ShapeRange.PictureFormat.CropRight = 360
+		myPict.ShapeRange.PictureFormat.CropLeft = 360
+		myPict.ShapeRange.Height = 160
+		myPict.ShapeRange.Width = 260
+		myPict.ShapeRange.IncrementLeft -98
+		myPict.ShapeRange.IncrementTop -15
+	End With
+
+    Set myViewer = Nothing
+    Set myWindow = Nothing	
+	
+	'objWorksheet.SetBackgroundPicture "C:\Skrypt\1303496388949.jpg" ' go³a dupa
+	'objExcel.Quit 'wy³¹czanie excela
+end sub
+
+sub komunikat_koncowy()
+	Clear_All_Files_And_SubFolders_In_Folder()
+	
+	'objWorksheet.Copy 'Tworzenie kopii karty
+	dim nazwa_folderu as string
+	nazwa_folderu = sciezka & nazwa_pliku
+	objWorkbook.SaveAs nazwa_folderu
+	MsgBox "Gotowe! Wygenerowa³eœ w³aœnie kartê technologiczn¹. Ciesz siê :D"
+End sub
+ 
+Sub Clear_All_Files_And_SubFolders_In_Folder()
+'Delete all files and subfolders
+'Be sure that no file is open in the folder
+    Dim FSO As Object
+    Dim MyPath, MyFile As String
+
+    Set FSO = CreateObject("scripting.filesystemobject")
+
+    MyPath = sciezka  '<< Change
+	MyFile = sciezka & nazwa_pliku & ".xls"
+
+    If Right(MyPath, 1) = "\" Then
+        MyPath = Left(MyPath, Len(MyPath) - 1)
+    End If
+
+    If FSO.FolderExists(MyPath) = False Then
+        MsgBox MyPath & "Nie istnieje taki plik"
+        Exit Sub 'wychodzi z podprogramu
+    End If
+	
+	If FSO.FileExists(MyFile) = True Then
+        MsgBox "Plik zostanie podmieniony!"
+    End If
+	
+	MyFile = sciezka & nazwa_pliku
+
+    On Error Resume Next
+    'Delete files
+    FSO.deletefile MyPath & "\DocFabView.jpg", True
+	FSO.deletefile MyFile & ".*", True
+    'Delete subfolders
+    'FSO.deletefolder MyPath & "\*.*", True
+	'Delete folder
+	'FSO.deletefolder sciezka & nazwa_pliku, True
+    On Error GoTo 0
+
+End Sub
+
+Sub porzadek()
+	dim tymczasowa as integer
+	tymczasowa = 0
+	for intRow2 = 1 to najwieksze_narzedzie step 1
+		if (czas(intRow2 + tymczasowa) = 0) then								
+			tymczasowa = tymczasowa + 1
+		end if
+		czas_narzedzia(intRow2) = czas(intRow2 + tymczasowa)
+		czas(intRow2) = czas_narzedzia(intRow2)
+	Next
+End Sub
+
+Sub porzadek_kom()
+	dim tymczasowa as integer
+	tymczasowa = 0
+	for intRow2 = 1 to najwieksze_narzedzie step 1
+		if (len(komentarznarzedzia(intRow2 + tymczasowa)) = 0) then								
+				tymczasowa = tymczasowa + 1
+		end if
+		komentarz(intRow2) = komentarznarzedzia(intRow2 + tymczasowa)
+		komentarznarzedzia(intRow2) = komentarz(intRow2)
+	Next
+End Sub
+
+Sub komunikat()
+	dim txt_zk, txt_kod as integer
+	dim txt_poz, txt_nazwa, txt_maszyna, txt_oprz, txt_oprz_nazwa, txt_material, txt_stan as string
+	dim txt_wym1, txt_wym2, txt_wym3 as integer
+	
+	'Call wprowadz_zk(txt_zk)
+	'Call wprowadz_kod(txt_kod)
+	'Call wprowadz_poz(txt_poz)
+	'Call wprowadz_maszyna(txt_maszyna)
+	If nazwa_odkuwki = "" Then 'Monitoruje, czy u¿ytkownik wprowadzi³ ju¿ wczeœniej dane
+		Call wprowadz_nazwa(txt_nazwa)
+	Else
+		txt_nazwa = nazwa_odkuwki
+	End if
+	Call wprowadz_wymiary(txt_wym1, txt_wym2, txt_wym3)
+	If kod_oprz = "" Then
+		Call wprowadz_oprz(txt_oprz)
+	Else
+		txt_oprz = kod_oprz
+	End if
+	Call wprowadz_oprz_nazwa(txt_oprz_nazwa)
+	If material = "" Then
+		Call wprowadz_material(txt_material)
+	Else
+		txt_material = material
+	End if
+	Call wprowadz_stan(txt_stan)
+	
+	if len(txt_wym2)=0 then
+		Call MsgBox ("Wymiary: " & " " & txt_wym1 & "x" & txt_wym3 & vbCrLf & "Kod przyrz¹dowania: " & " " & txt_oprz & vbCrLf & "Nazwa oprzyrz¹dowania: " & " " & txt_oprz_nazwa & vbCrLf & "Materia³: " & " " & txt_material & vbCrLf & "Stan materia³u: " & " " & txt_stan)  
+	else
+		Call MsgBox ("Wymiary: " & " " & txt_wym1 & "x" & txt_wym2 & "x" & txt_wym3 & vbCrLf & "Kod przyrz¹dowania: " & " " & txt_oprz & vbCrLf & "Nazwa oprzyrz¹dowania: " & " " & txt_oprz_nazwa & vbCrLf & "Materia³: " & " " & txt_material & vbCrLf & "Stan materia³u: " & " " & txt_stan)
+	end if
+	On Error Resume Next
+	
+	nazwa_odkuwki = txt_nazwa
+	kod_oprz = txt_oprz
+	nazwa_oprz = txt_oprz_nazwa
+	material = txt_material
+	stan = txt_stan
+	wym1 = txt_wym1
+	wym2 = txt_wym2
+	wym3 = txt_wym3
+	
+End Sub 
+'===Input boxy===
+Sub wprowadz_nazwa(txt_nazwa as string)
+	txt_nazwa = InputBox("Podaj nazwê odkuwki" & vbCrLf & "Przyk³ad: Wid³ak", "WprowadŸ dane")
+	'if (len(txt_nazwa)=0) then
+	'	Call wprowadz_nazwa(txt_nazwa)
+	'end if
+	On Error Resume Next
+End Sub
+'============================================================================================================================================================
+Sub wprowadz_wymiary(txt_wym1 as integer, txt_wym2 as integer, txt_wym3 as integer)
+	dim txt as string
+	Dim srednik, znak_x As Integer
+	txt = InputBox("Podaj wymiary, oddzielane znakiem x" & vbCrLf & "Przyk³ad: 177,7x58  (u¿yj przecinka)" & vbCrLf & "Przyk³ad: 200x128x50", "WprowadŸ dane")
+	srednik = InStr(txt, "x")
+	znak_x = InStrRev(txt, "x")
+	txt_wym1 = left(txt,srednik-1)
+	if (znak_x-srednik <> 0) then
+		txt_wym2 = mid(txt,srednik+1,znak_x-srednik-1)
+	end if
+	txt_wym3 = right(txt,len(txt)-znak_x)
+	On Error Resume Next
+End Sub
+'============================================================================================================================================================
+Sub wprowadz_oprz(txt_oprz as string)
+	txt_oprz = InputBox("Podaj kod oprzyrz¹dowania" & vbCrLf & "Przyk³ad: 8.99.45.005.00.314", "WprowadŸ dane")
+	'if (len(txt_oprz)=0) then
+	'	Call wprowadz_oprz(txt_oprz)
+	'end if
+	On Error Resume Next
+End Sub
+'============================================================================================================================================================
+Sub wprowadz_oprz_nazwa(txt_oprz_nazwa as string)
+	txt_oprz_nazwa = InputBox("Podaj nazwê oprzyrz¹dowania" & vbCrLf & "Przyk³ad: Okrojnica" & vbCrLf & "Przyk³ad: Wk³adka" & vbCrLf & "Przyk³ad: Stempel", "WprowadŸ dane")
+	'if (len(txt_oprz_nazwa)=0) then
+	'	Call wprowadz_oprz_nazwa(txt_oprz_nazwa)
+	'end if
+	On Error Resume Next
+End Sub
+'============================================================================================================================================================
+Sub wprowadz_material(txt_material as string)
+	txt_material = UCase(InputBox("Podaj materia³" & vbCrLf & "Przyk³ad: UNIMAX", "WprowadŸ dane"))
+	'UCase(txt_material)
+	'if (len(txt_material)=0) then
+	'	Call wprowadz_material(txt_material)
+	'end if
+	On Error Resume Next
+End Sub
+'============================================================================================================================================================
+Sub wprowadz_stan(txt_stan as string)
+	txt_stan = InputBox("Podaj stan materia³u" & vbCrLf & "Przyk³ad: Po OC" & vbCrLf & "Przyk³ad: Surowy", "WprowadŸ dane")
+	'if (len(txt_stan)=0) then
+	'	Call wprowadz_stan(txt_stan)
+	'end if
+	On Error Resume Next
+End Sub
+
+
+
+
+
+
+Sub wprowadz_zk(txt_zk as Integer)
+	txt_zk = InputBox("Podaj numer ZK" & vbCrLf & "Przyk³ad: 3749", "WprowadŸ dane")
+	if (len(txt_zk)<>4) then
+		Call wprowadz_zk(txt_zk)
+	end if
+	if IsNumeric(txt_zk)=FALSE then
+		Call wprowadz_zk(txt_zk)
+	end if
+	On Error Resume Next
+End Sub
+'============================================================================================================================================================
+Sub wprowadz_kod(txt_kod as Integer)
+	txt_kod = InputBox("Podaj skrócony kod odkuwki" & vbCrLf & "Przyk³ad: 510003", "WprowadŸ dane")
+	if (len(txt_kod)<>6) then
+		Call wprowadz_kod(txt_kod)
+	end if
+	if IsNumeric(txt_kod)=FALSE then
+		Call wprowadz_kod(txt_kod)
+	end if
+	On Error Resume Next
+End Sub
+'============================================================================================================================================================
+Sub wprowadz_poz(txt_poz as string)
+	txt_poz = InputBox("Podaj numer pozycji" & vbCrLf & "Przyk³ad: KP03", "WprowadŸ dane")
+	UCase(txt_poz)
+	if (len(txt_poz)=0) then
+		Call wprowadz_poz(txt_poz)
+	end if
+	On Error Resume Next
+End Sub
+'============================================================================================================================================================
+Sub wprowadz_maszyna(txt_maszyna as string)
+	txt_maszyna = InputBox("Podaj nazwê obrabiarki" & vbCrLf & "Przyk³ad: Feller", "WprowadŸ dane")
+	if (len(txt_maszyna)=0) then
+		Call wprowadz_maszyna(txt_maszyna)
+	end if
+	On Error Resume Next
+End Sub
+'============================================================================================================================================================
